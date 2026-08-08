@@ -179,6 +179,7 @@ void DrawInterface(HWND window, ConversionController& controller) {
     static std::string namingPattern = "{text}_{datetime}_{seq}";
     static int sequenceStart = 1;
     static int sequenceDigits = 4;
+    static bool openAboutDialog = false;
     static bool scrollToBottom = false;
     static size_t previousLogSize = 0;
 
@@ -226,11 +227,40 @@ void DrawInterface(HWND window, ConversionController& controller) {
             }
             ImGui::EndMenu();
         }
+        if (ImGui::MenuItem(strings.aboutMenu)) {
+            openAboutDialog = true;
+        }
         ImGui::EndMenuBar();
     }
 
+    if (openAboutDialog) {
+        ImGui::OpenPopup(strings.aboutTitle);
+        openAboutDialog = false;
+    }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5F, 0.5F));
+    if (ImGui::BeginPopupModal(strings.aboutTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted(strings.heading);
+        ImGui::Separator();
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 540.0F);
+        ImGui::TextWrapped("%s", strings.aboutDescriptionFirst);
+        ImGui::TextWrapped("%s", strings.aboutDescriptionSecond);
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+        ImGui::TextDisabled("%s", strings.aboutTechnology);
+        ImGui::Spacing();
+        ImGui::TextUnformatted(strings.openSourceLibraries);
+        ImGui::BulletText("libheif (LGPL-3.0)");
+        ImGui::BulletText("libpng (libpng License)");
+        ImGui::BulletText("libjpeg-turbo (BSD-3-Clause)");
+        ImGui::BulletText("Dear ImGui (MIT)");
+        ImGui::Spacing();
+        if (ImGui::Button(strings.close, ImVec2(100.0F, 0.0F))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
     ImGui::TextUnformatted(strings.heading);
-    ImGui::TextDisabled("%s", strings.subtitle);
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
