@@ -16,6 +16,7 @@ struct ConversionOptions {
     bool recursive = true;
     bool deleteOriginals = false;
     bool overwriteExisting = false;
+    bool preserveExif = true;
     OutputFormat outputFormat = OutputFormat::Png;
     int jpegQuality = 92;
     // Zero selects a worker count automatically from the available logical CPUs.

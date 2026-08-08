@@ -1,4 +1,6 @@
 #include "converter.h"
+#include "exif_metadata.h"
+#include "image_writers.h"
 
 #include <windows.h>
 
@@ -47,6 +49,89 @@ bool HasJpegSignature(const std::filesystem::path& file) {
     std::ifstream stream(file, std::ios::binary);
     stream.read(reinterpret_cast<char*>(actual.data()), static_cast<std::streamsize>(actual.size()));
     return stream.gcount() == static_cast<std::streamsize>(actual.size()) && actual == expected;
+}
+
+std::vector<uint8_t> ReadBytes(const std::filesystem::path& file) {
+    std::ifstream stream(file, std::ios::binary | std::ios::ate);
+    if (!stream) {
+        return {};
+    }
+    const std::streampos end = stream.tellg();
+    if (end <= 0) {
+        return {};
+    }
+    std::vector<uint8_t> bytes(static_cast<size_t>(end));
+    stream.seekg(0, std::ios::beg);
+    stream.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    return stream ? bytes : std::vector<uint8_t>{};
+}
+
+uint32_t ReadBigEndian32(const uint8_t* bytes) {
+    return (static_cast<uint32_t>(bytes[0]) << 24U) |
+           (static_cast<uint32_t>(bytes[1]) << 16U) |
+           (static_cast<uint32_t>(bytes[2]) << 8U) |
+           static_cast<uint32_t>(bytes[3]);
+}
+
+bool PngContainsExif(const std::filesystem::path& file, const std::vector<uint8_t>& expected) {
+    const std::vector<uint8_t> bytes = ReadBytes(file);
+    size_t position = 8;
+    while (position <= bytes.size() && bytes.size() - position >= 12) {
+        const uint32_t length = ReadBigEndian32(bytes.data() + position);
+        if (length > bytes.size() - position - 12U) {
+            return false;
+        }
+        const uint8_t* type = bytes.data() + position + 4U;
+        if (type[0] == 'e' && type[1] == 'X' && type[2] == 'I' && type[3] == 'f') {
+            return length == expected.size() &&
+                   std::equal(expected.begin(), expected.end(), bytes.begin() + static_cast<std::ptrdiff_t>(position + 8U));
+        }
+        position += 12U + length;
+    }
+    return false;
+}
+
+bool JpegContainsExif(const std::filesystem::path& file, const std::vector<uint8_t>& expected) {
+    const std::vector<uint8_t> bytes = ReadBytes(file);
+    const std::array<uint8_t, 6> header = {'E', 'x', 'i', 'f', 0, 0};
+    for (size_t position = 0; position + header.size() + expected.size() <= bytes.size(); ++position) {
+        if (std::equal(header.begin(), header.end(), bytes.begin() + static_cast<std::ptrdiff_t>(position)) &&
+            std::equal(
+                expected.begin(),
+                expected.end(),
+                bytes.begin() + static_cast<std::ptrdiff_t>(position + header.size()))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool MetadataWritersPass(const std::filesystem::path& directory) {
+    // Minimal little-endian TIFF data containing Orientation = 6.
+    std::vector<uint8_t> exif = {
+        'I', 'I', 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00,
+        0x01, 0x00,
+        0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+    };
+    heic_converter::NormalizeExifMetadata(exif, 1, 1);
+    if (exif[18] != 1 || exif[19] != 0) {
+        return false;
+    }
+
+    constexpr std::array<uint8_t, 4> pixel = {20, 40, 60, 255};
+    const std::filesystem::path png = directory / L"metadata.png";
+    const std::filesystem::path jpeg = directory / L"metadata.jpg";
+    std::string error;
+    if (!heic_converter::WritePng(png, pixel.data(), 1, 1, 4, exif, Language::English, error) ||
+        !PngContainsExif(png, exif)) {
+        return false;
+    }
+    if (!heic_converter::WriteJpeg(jpeg, pixel.data(), 1, 1, 4, 90, exif, Language::English, error) ||
+        !JpegContainsExif(jpeg, exif)) {
+        return false;
+    }
+    return true;
 }
 
 } // namespace
@@ -164,7 +249,12 @@ int wmain(int argc, wchar_t** argv) {
             return 1;
         }
 
-        std::cout << "Parallel recursive PNG/JPEG conversion and delete-original behavior passed.\n";
+        if (!MetadataWritersPass(temporary.Path())) {
+            std::cerr << "PNG/JPEG EXIF metadata preservation failed.\n";
+            return 1;
+        }
+
+        std::cout << "Parallel PNG/JPEG conversion, EXIF metadata, and delete-original behavior passed.\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
+#include <cstring>
+#include <limits>
 #include <vector>
 
 namespace heic_converter {
@@ -23,6 +25,7 @@ bool WritePng(
     int width,
     int height,
     int stride,
+    const std::vector<uint8_t>& exif,
     Language language,
     std::string& errorMessage) {
     FILE* file = nullptr;
@@ -71,6 +74,19 @@ bool WritePng(
         PNG_INTERLACE_NONE,
         PNG_COMPRESSION_TYPE_DEFAULT,
         PNG_FILTER_TYPE_DEFAULT);
+    if (!exif.empty()) {
+        if (exif.size() > std::numeric_limits<png_uint_32>::max()) {
+            png_destroy_write_struct(&png, &info);
+            fclose(file);
+            errorMessage = SelectText(language, "EXIF 元数据过大", "The EXIF metadata is too large");
+            return false;
+        }
+        png_set_eXIf_1(
+            png,
+            info,
+            static_cast<png_uint_32>(exif.size()),
+            const_cast<png_bytep>(exif.data()));
+    }
     png_set_rows(png, info, rows.data());
     png_write_png(png, info, PNG_TRANSFORM_IDENTITY, nullptr);
     png_destroy_write_struct(&png, &info);
@@ -121,11 +137,25 @@ bool WriteJpeg(
     int height,
     int stride,
     int quality,
+    const std::vector<uint8_t>& exif,
     Language language,
     std::string& errorMessage) {
     if (static_cast<size_t>(width) > SIZE_MAX / 3U) {
         errorMessage = SelectText(language, "图像宽度过大", "The image width is too large");
         return false;
+    }
+
+    constexpr size_t exifHeaderSize = 6;
+    std::vector<uint8_t> exifMarker;
+    if (!exif.empty()) {
+        if (exif.size() > SIZE_MAX - exifHeaderSize) {
+            errorMessage = SelectText(language, "EXIF 元数据过大", "The EXIF metadata is too large");
+            return false;
+        }
+        exifMarker.resize(exifHeaderSize + exif.size());
+        constexpr uint8_t header[exifHeaderSize] = {'E', 'x', 'i', 'f', 0, 0};
+        memcpy(exifMarker.data(), header, exifHeaderSize);
+        memcpy(exifMarker.data() + exifHeaderSize, exif.data(), exif.size());
     }
 
     FILE* file = nullptr;
@@ -171,6 +201,20 @@ bool WriteJpeg(
     jpeg_set_quality(&compressor, std::clamp(quality, 1, 100), TRUE);
     compressor.optimize_coding = TRUE;
     jpeg_start_compress(&compressor, TRUE);
+
+    constexpr size_t maximumMarkerSize = 65533;
+    const uint8_t* markerData = exifMarker.data();
+    size_t markerSize = exifMarker.size();
+    while (markerSize > 0) {
+        const size_t chunkSize = std::min(markerSize, maximumMarkerSize);
+        jpeg_write_marker(
+            &compressor,
+            JPEG_APP0 + 1,
+            markerData,
+            static_cast<unsigned int>(chunkSize));
+        markerData += chunkSize;
+        markerSize -= chunkSize;
+    }
 
     while (compressor.next_scanline < compressor.image_height) {
         const auto* source = pixels + static_cast<size_t>(compressor.next_scanline) * stride;

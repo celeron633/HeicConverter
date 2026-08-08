@@ -14,6 +14,7 @@ struct UiStrings {
     const char* folderHint;
     const char* browse;
     const char* searchSubdirectories;
+    const char* preserveExif;
     const char* deleteOriginals;
     const char* overwriteExisting;
     const char* outputFormat;

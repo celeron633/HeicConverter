@@ -13,6 +13,7 @@ bool ConvertImage(
     const std::filesystem::path& temporaryOutput,
     OutputFormat outputFormat,
     int jpegQuality,
+    bool preserveExif,
     Language language,
     std::string& errorMessage);
 

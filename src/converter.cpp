@@ -176,6 +176,7 @@ void ConversionController::Run(ConversionOptions options) {
                                 temporary,
                                 options.outputFormat,
                                 options.jpegQuality,
+                                options.preserveExif,
                                 options.language,
                                 errorMessage);
                             if (success) {

@@ -1,5 +1,6 @@
 #include "image_converter.h"
 
+#include "exif_metadata.h"
 #include "image_writers.h"
 
 #include <libheif/heif.h>
@@ -33,6 +34,7 @@ bool ConvertImage(
     const std::filesystem::path& temporaryOutput,
     OutputFormat outputFormat,
     int jpegQuality,
+    bool preserveExif,
     Language language,
     std::string& errorMessage) {
     std::ifstream stream(input, std::ios::binary | std::ios::ate);
@@ -81,6 +83,11 @@ bool ConvertImage(
     }
     HeifHandlePtr handle(rawHandle, &heif_image_handle_release);
 
+    std::vector<uint8_t> exif;
+    if (!ExtractExifMetadata(handle.get(), preserveExif, language, exif, errorMessage)) {
+        return false;
+    }
+
     heif_image* rawImage = nullptr;
     error = heif_decode_image(
         handle.get(), &rawImage, heif_colorspace_RGB, heif_chroma_interleaved_RGBA, nullptr);
@@ -103,10 +110,13 @@ bool ConvertImage(
         return false;
     }
 
+    NormalizeExifMetadata(exif, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+
     if (outputFormat == OutputFormat::Jpeg) {
-        return WriteJpeg(temporaryOutput, pixels, width, height, stride, jpegQuality, language, errorMessage);
+        return WriteJpeg(
+            temporaryOutput, pixels, width, height, stride, jpegQuality, exif, language, errorMessage);
     }
-    return WritePng(temporaryOutput, pixels, width, height, stride, language, errorMessage);
+    return WritePng(temporaryOutput, pixels, width, height, stride, exif, language, errorMessage);
 }
 
 } // namespace heic_converter

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace heic_converter {
 
@@ -14,6 +15,7 @@ bool WritePng(
     int width,
     int height,
     int stride,
+    const std::vector<uint8_t>& exif,
     Language language,
     std::string& errorMessage);
 
@@ -24,6 +26,7 @@ bool WriteJpeg(
     int height,
     int stride,
     int quality,
+    const std::vector<uint8_t>& exif,
     Language language,
     std::string& errorMessage);
 

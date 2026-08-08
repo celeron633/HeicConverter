@@ -162,6 +162,7 @@ void ConfigureStyleAndFont() {
 void DrawInterface(HWND window, ConversionController& controller) {
     static std::string folder;
     static bool recursive = true;
+    static bool preserveExif = true;
     static bool deleteOriginals = false;
     static bool overwriteExisting = false;
     static int outputFormat = 0;
@@ -209,9 +210,11 @@ void DrawInterface(HWND window, ConversionController& controller) {
 
     ImGui::Checkbox(strings.searchSubdirectories, &recursive);
     ImGui::SameLine();
-    ImGui::Checkbox(strings.deleteOriginals, &deleteOriginals);
-    ImGui::SameLine();
     ImGui::Checkbox(strings.overwriteExisting, &overwriteExisting);
+
+    ImGui::Checkbox(strings.preserveExif, &preserveExif);
+    ImGui::SameLine();
+    ImGui::Checkbox(strings.deleteOriginals, &deleteOriginals);
 
     ImGui::TextUnformatted(strings.outputFormat);
     ImGui::SameLine(130.0F);
@@ -249,6 +252,7 @@ void DrawInterface(HWND window, ConversionController& controller) {
         options.recursive = recursive;
         options.deleteOriginals = deleteOriginals;
         options.overwriteExisting = overwriteExisting;
+        options.preserveExif = preserveExif;
         options.outputFormat = outputFormat == 1 ? OutputFormat::Jpeg : OutputFormat::Png;
         options.jpegQuality = jpegQuality;
         options.workerCount = static_cast<size_t>(workerCount);
@@ -289,18 +293,22 @@ void DrawInterface(HWND window, ConversionController& controller) {
     ImGui::Spacing();
     ImGui::SeparatorText(strings.processingLog);
     const float footerHeight = ImGui::GetFrameHeightWithSpacing();
-    ImGui::BeginChild("log", ImVec2(0.0F, -footerHeight), ImGuiChildFlags_Borders);
+    ImGui::BeginChild(
+        "log",
+        ImVec2(0.0F, -footerHeight),
+        ImGuiChildFlags_Borders,
+        ImGuiWindowFlags_HorizontalScrollbar);
     for (const std::string& line : snapshot.log) {
         if (line.rfind(strings.failurePrefix, 0) == 0 || line.rfind(strings.taskFailurePrefix, 0) == 0) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.42F, 0.42F, 1.0F));
-            ImGui::TextWrapped("%s", line.c_str());
+            ImGui::TextUnformatted(line.c_str());
             ImGui::PopStyleColor();
         } else if (line.rfind(strings.skippedPrefix, 0) == 0 || line.rfind(strings.scanWarningPrefix, 0) == 0) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.78F, 0.35F, 1.0F));
-            ImGui::TextWrapped("%s", line.c_str());
+            ImGui::TextUnformatted(line.c_str());
             ImGui::PopStyleColor();
         } else {
-            ImGui::TextWrapped("%s", line.c_str());
+            ImGui::TextUnformatted(line.c_str());
         }
     }
     if (snapshot.log.size() != previousLogSize) {
@@ -372,8 +380,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
-        920,
-        680,
+        1000,
+        780,
         nullptr,
         nullptr,
         instance,

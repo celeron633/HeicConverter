@@ -67,6 +67,8 @@ endif()
 add_library(HeicConverterCore STATIC
     src/converter.cpp
     src/converter.h
+    src/exif_metadata.cpp
+    src/exif_metadata.h
     src/file_operations.cpp
     src/file_operations.h
     src/image_converter.cpp
