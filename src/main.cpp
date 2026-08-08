@@ -227,6 +227,15 @@ void DrawInterface(HWND window, ConversionController& controller) {
             }
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("LANG")) {
+            if (ImGui::MenuItem("English", nullptr, languageSelection == 1)) {
+                languageSelection = 1;
+            }
+            if (ImGui::MenuItem("中文", nullptr, languageSelection == 0)) {
+                languageSelection = 0;
+            }
+            ImGui::EndMenu();
+        }
         if (ImGui::MenuItem(strings.aboutMenu)) {
             openAboutDialog = true;
         }
