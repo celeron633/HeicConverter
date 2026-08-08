@@ -175,6 +175,7 @@ void ConversionController::Run(ConversionOptions options) {
                                 input,
                                 temporary,
                                 options.outputFormat,
+                                options.pngCompressionLevel,
                                 options.jpegQuality,
                                 options.preserveExif,
                                 options.language,

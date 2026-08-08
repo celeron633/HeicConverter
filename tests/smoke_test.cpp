@@ -123,7 +123,7 @@ bool MetadataWritersPass(const std::filesystem::path& directory) {
     const std::filesystem::path png = directory / L"metadata.png";
     const std::filesystem::path jpeg = directory / L"metadata.jpg";
     std::string error;
-    if (!heic_converter::WritePng(png, pixel.data(), 1, 1, 4, exif, Language::English, error) ||
+    if (!heic_converter::WritePng(png, pixel.data(), 1, 1, 4, 9, exif, Language::English, error) ||
         !PngContainsExif(png, exif)) {
         return false;
     }

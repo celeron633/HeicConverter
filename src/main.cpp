@@ -166,6 +166,7 @@ void DrawInterface(HWND window, ConversionController& controller) {
     static bool deleteOriginals = false;
     static bool overwriteExisting = false;
     static int outputFormat = 0;
+    static int pngCompressionLevel = 6;
     static int jpegQuality = 92;
     static int workerCount = [] {
         const unsigned int detected = std::thread::hardware_concurrency();
@@ -221,8 +222,15 @@ void DrawInterface(HWND window, ConversionController& controller) {
     ImGui::RadioButton(strings.pngOption, &outputFormat, 0);
     ImGui::SameLine();
     ImGui::RadioButton(strings.jpegOption, &outputFormat, 1);
-    if (outputFormat == 1) {
-        ImGui::SetNextItemWidth(360.0F);
+    ImGui::SetNextItemWidth(360.0F);
+    if (outputFormat == 0) {
+        ImGui::SliderInt(
+            "##png-compression",
+            &pngCompressionLevel,
+            0,
+            9,
+            strings.pngCompressionFormat);
+    } else {
         ImGui::SliderInt("##jpeg-quality", &jpegQuality, 1, 100, strings.jpegQualityFormat);
     }
 
@@ -254,6 +262,7 @@ void DrawInterface(HWND window, ConversionController& controller) {
         options.overwriteExisting = overwriteExisting;
         options.preserveExif = preserveExif;
         options.outputFormat = outputFormat == 1 ? OutputFormat::Jpeg : OutputFormat::Png;
+        options.pngCompressionLevel = pngCompressionLevel;
         options.jpegQuality = jpegQuality;
         options.workerCount = static_cast<size_t>(workerCount);
         options.language = language;

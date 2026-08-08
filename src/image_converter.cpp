@@ -33,6 +33,7 @@ bool ConvertImage(
     const std::filesystem::path& input,
     const std::filesystem::path& temporaryOutput,
     OutputFormat outputFormat,
+    int pngCompressionLevel,
     int jpegQuality,
     bool preserveExif,
     Language language,
@@ -116,7 +117,16 @@ bool ConvertImage(
         return WriteJpeg(
             temporaryOutput, pixels, width, height, stride, jpegQuality, exif, language, errorMessage);
     }
-    return WritePng(temporaryOutput, pixels, width, height, stride, exif, language, errorMessage);
+    return WritePng(
+        temporaryOutput,
+        pixels,
+        width,
+        height,
+        stride,
+        pngCompressionLevel,
+        exif,
+        language,
+        errorMessage);
 }
 
 } // namespace heic_converter

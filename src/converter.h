@@ -18,6 +18,7 @@ struct ConversionOptions {
     bool overwriteExisting = false;
     bool preserveExif = true;
     OutputFormat outputFormat = OutputFormat::Png;
+    int pngCompressionLevel = 6;
     int jpegQuality = 92;
     // Zero selects a worker count automatically from the available logical CPUs.
     size_t workerCount = 0;

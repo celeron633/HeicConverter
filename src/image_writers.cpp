@@ -25,6 +25,7 @@ bool WritePng(
     int width,
     int height,
     int stride,
+    int compressionLevel,
     const std::vector<uint8_t>& exif,
     Language language,
     std::string& errorMessage) {
@@ -63,7 +64,7 @@ bool WritePng(
     }
 
     png_init_io(png, file);
-    png_set_compression_level(png, 6);
+    png_set_compression_level(png, std::clamp(compressionLevel, 0, 9));
     png_set_IHDR(
         png,
         info,

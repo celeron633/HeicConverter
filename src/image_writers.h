@@ -15,6 +15,7 @@ bool WritePng(
     int width,
     int height,
     int stride,
+    int compressionLevel,
     const std::vector<uint8_t>& exif,
     Language language,
     std::string& errorMessage);

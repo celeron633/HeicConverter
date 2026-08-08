@@ -12,6 +12,7 @@ bool ConvertImage(
     const std::filesystem::path& input,
     const std::filesystem::path& temporaryOutput,
     OutputFormat outputFormat,
+    int pngCompressionLevel,
     int jpegQuality,
     bool preserveExif,
     Language language,

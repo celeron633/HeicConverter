@@ -20,6 +20,7 @@ struct UiStrings {
     const char* outputFormat;
     const char* pngOption;
     const char* jpegOption;
+    const char* pngCompressionFormat;
     const char* jpegQualityFormat;
     const char* parallelThreads;
     const char* workerCountFormat;
