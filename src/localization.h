@@ -12,6 +12,7 @@ struct UiStrings {
     const char* subtitle;
     const char* conversionTab;
     const char* namingTab;
+    const char* logTab;
     const wchar_t* folderDialogTitle;
     const char* folderHint;
     const char* browse;
@@ -33,7 +34,6 @@ struct UiStrings {
     const char* statusFormat;
     const char* summaryFormat;
     const char* currentFormat;
-    const char* processingLog;
     const char* tip;
     const char* failurePrefix;
     const char* taskFailurePrefix;

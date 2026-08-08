@@ -311,37 +311,6 @@ void DrawInterface(HWND window, ConversionController& controller) {
                 ImGui::TextWrapped(strings.currentFormat, snapshot.currentFile.c_str());
             }
 
-            ImGui::Spacing();
-            ImGui::SeparatorText(strings.processingLog);
-            const float footerHeight = ImGui::GetFrameHeightWithSpacing();
-            ImGui::BeginChild("log", ImVec2(0.0F, -footerHeight), ImGuiChildFlags_Borders,
-                              ImGuiWindowFlags_HorizontalScrollbar);
-            ImGui::PushFont(nullptr, 15.0F);
-            for (const std::string &line : snapshot.log) {
-                if (line.rfind(strings.failurePrefix, 0) == 0 || line.rfind(strings.taskFailurePrefix, 0) == 0) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.42F, 0.42F, 1.0F));
-                    ImGui::TextUnformatted(line.c_str());
-                    ImGui::PopStyleColor();
-                } else if (line.rfind(strings.skippedPrefix, 0) == 0 || line.rfind(strings.scanWarningPrefix, 0) == 0) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.78F, 0.35F, 1.0F));
-                    ImGui::TextUnformatted(line.c_str());
-                    ImGui::PopStyleColor();
-                } else {
-                    ImGui::TextUnformatted(line.c_str());
-                }
-            }
-            if (snapshot.log.size() != previousLogSize) {
-                scrollToBottom = true;
-                previousLogSize = snapshot.log.size();
-            }
-            if (scrollToBottom) {
-                ImGui::SetScrollHereY(1.0F);
-                scrollToBottom = false;
-            }
-            ImGui::PopFont();
-            ImGui::EndChild();
-            ImGui::TextDisabled("%s", strings.tip);
-
             ImGui::EndTabItem();
         }
 
@@ -401,6 +370,38 @@ void DrawInterface(HWND window, ConversionController& controller) {
             }
             ImGui::EndDisabled();
             ImGui::EndDisabled();
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem(strings.logTab)) {
+            const float footerHeight = ImGui::GetFrameHeightWithSpacing();
+            ImGui::BeginChild("log", ImVec2(0.0F, -footerHeight), ImGuiChildFlags_Borders,
+                              ImGuiWindowFlags_HorizontalScrollbar);
+            ImGui::PushFont(nullptr, 15.0F);
+            for (const std::string &line : snapshot.log) {
+                if (line.rfind(strings.failurePrefix, 0) == 0 || line.rfind(strings.taskFailurePrefix, 0) == 0) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.42F, 0.42F, 1.0F));
+                    ImGui::TextUnformatted(line.c_str());
+                    ImGui::PopStyleColor();
+                } else if (line.rfind(strings.skippedPrefix, 0) == 0 || line.rfind(strings.scanWarningPrefix, 0) == 0) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.78F, 0.35F, 1.0F));
+                    ImGui::TextUnformatted(line.c_str());
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::TextUnformatted(line.c_str());
+                }
+            }
+            if (snapshot.log.size() != previousLogSize) {
+                scrollToBottom = true;
+                previousLogSize = snapshot.log.size();
+            }
+            if (scrollToBottom) {
+                ImGui::SetScrollHereY(1.0F);
+                scrollToBottom = false;
+            }
+            ImGui::PopFont();
+            ImGui::EndChild();
+            ImGui::TextDisabled("%s", strings.tip);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
