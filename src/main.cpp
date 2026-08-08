@@ -307,6 +307,7 @@ void DrawInterface(HWND window, ConversionController& controller) {
         ImVec2(0.0F, -footerHeight),
         ImGuiChildFlags_Borders,
         ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::PushFont(nullptr, 15.0F);
     for (const std::string& line : snapshot.log) {
         if (line.rfind(strings.failurePrefix, 0) == 0 || line.rfind(strings.taskFailurePrefix, 0) == 0) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.42F, 0.42F, 1.0F));
@@ -328,6 +329,7 @@ void DrawInterface(HWND window, ConversionController& controller) {
         ImGui::SetScrollHereY(1.0F);
         scrollToBottom = false;
     }
+    ImGui::PopFont();
     ImGui::EndChild();
     ImGui::TextDisabled("%s", strings.tip);
 
