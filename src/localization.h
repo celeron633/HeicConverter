@@ -10,6 +10,8 @@ const char* SelectText(Language language, const char* chinese, const char* engli
 struct UiStrings {
     const char* heading;
     const char* subtitle;
+    const char* conversionTab;
+    const char* namingTab;
     const wchar_t* folderDialogTitle;
     const char* folderHint;
     const char* browse;
@@ -37,6 +39,22 @@ struct UiStrings {
     const char* taskFailurePrefix;
     const char* skippedPrefix;
     const char* scanWarningPrefix;
+    const char* enableCustomNaming;
+    const char* namingDescription;
+    const char* customTextLabel;
+    const char* customTextHint;
+    const char* namingPatternLabel;
+    const char* namingPatternHint;
+    const char* appendTextToken;
+    const char* appendDateTimeToken;
+    const char* appendSequenceToken;
+    const char* resetPattern;
+    const char* sequenceStart;
+    const char* sequenceDigits;
+    const char* namingPlaceholders;
+    const char* namingFallback;
+    const char* namingPreviewFormat;
+    const char* namingPreviewErrorFormat;
 };
 
 const UiStrings& GetUiStrings(Language language);

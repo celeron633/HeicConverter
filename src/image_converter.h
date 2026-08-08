@@ -4,6 +4,7 @@
 #include "output_format.h"
 
 #include <filesystem>
+#include <optional>
 #include <string>
 
 namespace heic_converter {
@@ -15,7 +16,9 @@ bool ConvertImage(
     int pngCompressionLevel,
     int jpegQuality,
     bool preserveExif,
+    bool extractExifDateTime,
     Language language,
+    std::optional<std::string>& exifDateTime,
     std::string& errorMessage);
 
 } // namespace heic_converter

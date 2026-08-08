@@ -6,10 +6,24 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cwctype>
 #include <exception>
 #include <system_error>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+
+namespace {
+
+std::wstring OutputPathKey(const std::filesystem::path& path) {
+    std::wstring key = path.lexically_normal().wstring();
+    std::transform(key.begin(), key.end(), key.begin(), [](wchar_t character) {
+        return static_cast<wchar_t>(std::towlower(character));
+    });
+    return key;
+}
+
+} // namespace
 
 ConversionController::~ConversionController() {
     Cancel();
@@ -117,6 +131,8 @@ void ConversionController::Run(ConversionOptions options) {
         };
 
         std::atomic_size_t nextIndex{0};
+        std::mutex outputPathsMutex;
+        std::unordered_set<std::wstring> outputPaths;
         {
             std::vector<std::jthread> workers;
             workers.reserve(workerCount);
@@ -145,32 +161,35 @@ void ConversionController::Run(ConversionOptions options) {
                             std::filesystem::path output = input;
                             output.replace_extension(options.outputFormat == OutputFormat::Jpeg ? L".jpg" : L".png");
 
-                            std::error_code filesystemError;
-                            const bool outputExists = std::filesystem::exists(output, filesystemError);
-                            if (filesystemError) {
-                                completeFile(
-                                    FileResult::Failed,
-                                    std::string(SelectText(options.language, "失败: ", "Failed: ")) + inputName +
-                                        SelectText(
-                                            options.language,
-                                            " — 无法检查目标文件",
-                                            " — Could not inspect the output file"));
-                                continue;
-                            }
-                            if (outputExists && !options.overwriteExisting) {
-                                completeFile(
-                                    FileResult::Skipped,
-                                    std::string(SelectText(options.language, "跳过: ", "Skipped: ")) + inputName +
-                                        SelectText(
-                                            options.language,
-                                            " — 目标文件已存在",
-                                            " — The output file already exists"));
-                                continue;
+                            if (!options.fileNaming.enabled) {
+                                std::error_code filesystemError;
+                                const bool outputExists = std::filesystem::exists(output, filesystemError);
+                                if (filesystemError) {
+                                    completeFile(
+                                        FileResult::Failed,
+                                        std::string(SelectText(options.language, "失败: ", "Failed: ")) + inputName +
+                                            SelectText(
+                                                options.language,
+                                                " — 无法检查目标文件",
+                                                " — Could not inspect the output file"));
+                                    continue;
+                                }
+                                if (outputExists && !options.overwriteExisting) {
+                                    completeFile(
+                                        FileResult::Skipped,
+                                        std::string(SelectText(options.language, "跳过: ", "Skipped: ")) + inputName +
+                                            SelectText(
+                                                options.language,
+                                                " — 目标文件已存在",
+                                                " — The output file already exists"));
+                                    continue;
+                                }
                             }
 
                             const std::filesystem::path temporary =
                                 heic_converter::MakeTemporaryPath(output, index);
                             std::string errorMessage;
+                            std::optional<std::string> exifDateTime;
                             bool success = heic_converter::ConvertImage(
                                 input,
                                 temporary,
@@ -178,8 +197,60 @@ void ConversionController::Run(ConversionOptions options) {
                                 options.pngCompressionLevel,
                                 options.jpegQuality,
                                 options.preserveExif,
+                                options.fileNaming.enabled,
                                 options.language,
+                                exifDateTime,
                                 errorMessage);
+
+                            bool usedCustomName = false;
+                            if (success) {
+                                const heic_converter::FileNamingResult naming = heic_converter::BuildFileStem(
+                                    options.fileNaming,
+                                    WideToUtf8(input.stem().wstring()),
+                                    exifDateTime,
+                                    index,
+                                    options.language);
+                                if (!naming.success) {
+                                    success = false;
+                                    errorMessage = naming.error;
+                                } else if (options.fileNaming.enabled) {
+                                    usedCustomName = naming.usedCustomName;
+                                    const std::wstring extension =
+                                        options.outputFormat == OutputFormat::Jpeg ? L".jpg" : L".png";
+                                    output = input.parent_path() / (Utf8ToWide(naming.stem) + extension);
+
+                                    std::lock_guard outputLock(outputPathsMutex);
+                                    if (!outputPaths.insert(OutputPathKey(output)).second) {
+                                        success = false;
+                                        errorMessage = SelectText(
+                                            options.language,
+                                            "生成的文件名与本批次中的其他文件重复",
+                                            "The generated filename duplicates another file in this batch");
+                                    }
+                                }
+                            }
+                            if (success && options.fileNaming.enabled) {
+                                std::error_code filesystemError;
+                                const bool outputExists = std::filesystem::exists(output, filesystemError);
+                                if (filesystemError) {
+                                    success = false;
+                                    errorMessage = SelectText(
+                                        options.language,
+                                        "无法检查目标文件",
+                                        "Could not inspect the output file");
+                                } else if (outputExists && !options.overwriteExisting) {
+                                    std::error_code ignored;
+                                    std::filesystem::remove(temporary, ignored);
+                                    completeFile(
+                                        FileResult::Skipped,
+                                        std::string(SelectText(options.language, "跳过: ", "Skipped: ")) + inputName +
+                                            SelectText(
+                                                options.language,
+                                                " — 目标文件已存在",
+                                                " — The output file already exists"));
+                                    continue;
+                                }
+                            }
                             if (success) {
                                 success = heic_converter::CommitTemporaryFile(
                                     temporary,
@@ -203,6 +274,12 @@ void ConversionController::Run(ConversionOptions options) {
                             std::string logLine =
                                 std::string(SelectText(options.language, "完成: ", "Completed: ")) + inputName +
                                 " → " + outputName;
+                            if (options.fileNaming.enabled && !usedCustomName) {
+                                logLine += SelectText(
+                                    options.language,
+                                    "（未找到 EXIF 日期，保留原文件名）",
+                                    " (no EXIF date found; kept the original filename)");
+                            }
                             if (options.deleteOriginals) {
                                 std::error_code deleteError;
                                 if (!std::filesystem::remove(input, deleteError) || deleteError) {

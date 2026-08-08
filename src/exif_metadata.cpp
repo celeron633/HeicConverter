@@ -3,19 +3,25 @@
 #include <libheif/heif.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
+#include <initializer_list>
 
 namespace heic_converter {
 namespace {
 
 constexpr uint16_t tagImageWidth = 0x0100;
 constexpr uint16_t tagImageHeight = 0x0101;
+constexpr uint16_t tagDateTime = 0x0132;
 constexpr uint16_t tagOrientation = 0x0112;
 constexpr uint16_t tagExifIfd = 0x8769;
+constexpr uint16_t tagDateTimeOriginal = 0x9003;
+constexpr uint16_t tagDateTimeDigitized = 0x9004;
 constexpr uint16_t tagPixelWidth = 0xA002;
 constexpr uint16_t tagPixelHeight = 0xA003;
 constexpr uint16_t typeShort = 3;
 constexpr uint16_t typeLong = 4;
+constexpr uint16_t typeAscii = 2;
 
 bool Read16(const std::vector<uint8_t>& data, size_t offset, bool littleEndian, uint16_t& value) {
     if (offset > data.size() || data.size() - offset < 2) {
@@ -140,6 +146,106 @@ bool HasTiffHeader(const std::vector<uint8_t>& exif, bool& littleEndian) {
     return Read16(exif, 2, littleEndian, marker) && marker == 42;
 }
 
+std::optional<std::string> ReadAsciiTag(
+    const std::vector<uint8_t>& exif,
+    uint32_t ifdOffset,
+    bool littleEndian,
+    std::initializer_list<uint16_t> requestedTags) {
+    uint16_t entryCount = 0;
+    if (!Read16(exif, ifdOffset, littleEndian, entryCount)) {
+        return std::nullopt;
+    }
+    const size_t entriesOffset = static_cast<size_t>(ifdOffset) + 2U;
+    if (entriesOffset > exif.size() || entryCount > (exif.size() - entriesOffset) / 12U) {
+        return std::nullopt;
+    }
+
+    for (const uint16_t requestedTag : requestedTags) {
+        for (uint16_t index = 0; index < entryCount; ++index) {
+            const size_t entry = entriesOffset + static_cast<size_t>(index) * 12U;
+            uint16_t tag = 0;
+            uint16_t type = 0;
+            uint32_t count = 0;
+            if (!Read16(exif, entry, littleEndian, tag) || tag != requestedTag ||
+                !Read16(exif, entry + 2U, littleEndian, type) || type != typeAscii ||
+                !Read32(exif, entry + 4U, littleEndian, count) || count == 0) {
+                continue;
+            }
+
+            uint32_t dataOffset = static_cast<uint32_t>(entry + 8U);
+            if (count > 4 && !Read32(exif, entry + 8U, littleEndian, dataOffset)) {
+                continue;
+            }
+            if (dataOffset > exif.size() || count > exif.size() - dataOffset) {
+                continue;
+            }
+            const char* begin = reinterpret_cast<const char*>(exif.data() + dataOffset);
+            size_t length = 0;
+            while (length < count && begin[length] != '\0') {
+                ++length;
+            }
+            return std::string(begin, length);
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<uint32_t> FindExifIfdOffset(
+    const std::vector<uint8_t>& exif,
+    uint32_t ifdOffset,
+    bool littleEndian) {
+    uint16_t entryCount = 0;
+    if (!Read16(exif, ifdOffset, littleEndian, entryCount)) {
+        return std::nullopt;
+    }
+    const size_t entriesOffset = static_cast<size_t>(ifdOffset) + 2U;
+    if (entriesOffset > exif.size() || entryCount > (exif.size() - entriesOffset) / 12U) {
+        return std::nullopt;
+    }
+    for (uint16_t index = 0; index < entryCount; ++index) {
+        const size_t entry = entriesOffset + static_cast<size_t>(index) * 12U;
+        uint16_t tag = 0;
+        uint16_t type = 0;
+        uint32_t count = 0;
+        uint32_t value = 0;
+        if (Read16(exif, entry, littleEndian, tag) && tag == tagExifIfd &&
+            Read16(exif, entry + 2U, littleEndian, type) && type == typeLong &&
+            Read32(exif, entry + 4U, littleEndian, count) && count == 1 &&
+            Read32(exif, entry + 8U, littleEndian, value)) {
+            return value;
+        }
+    }
+    return std::nullopt;
+}
+
+bool IsDigit(char character) {
+    return character >= '0' && character <= '9';
+}
+
+std::optional<std::string> FormatExifDateTime(const std::string& value) {
+    if (value.size() < 19 || value[4] != ':' || value[7] != ':' || value[10] != ' ' ||
+        value[13] != ':' || value[16] != ':') {
+        return std::nullopt;
+    }
+    constexpr std::array<size_t, 14> digitPositions = {0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18};
+    if (!std::all_of(digitPositions.begin(), digitPositions.end(), [&](size_t position) {
+            return IsDigit(value[position]);
+        })) {
+        return std::nullopt;
+    }
+
+    const int month = std::stoi(value.substr(5, 2));
+    const int day = std::stoi(value.substr(8, 2));
+    const int hour = std::stoi(value.substr(11, 2));
+    const int minute = std::stoi(value.substr(14, 2));
+    const int second = std::stoi(value.substr(17, 2));
+    if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) {
+        return std::nullopt;
+    }
+    return value.substr(0, 4) + value.substr(5, 2) + value.substr(8, 2) + "_" +
+           value.substr(11, 2) + value.substr(14, 2) + value.substr(17, 2);
+}
+
 } // namespace
 
 bool ExtractExifMetadata(
@@ -208,6 +314,31 @@ void NormalizeExifMetadata(std::vector<uint8_t>& exif, uint32_t width, uint32_t 
         return;
     }
     UpdateIfd(exif, firstIfdOffset, littleEndian, width, height, true);
+}
+
+std::optional<std::string> ExtractExifDateTime(const std::vector<uint8_t>& exif) {
+    bool littleEndian = false;
+    uint32_t firstIfdOffset = 0;
+    if (!HasTiffHeader(exif, littleEndian) || !Read32(exif, 4, littleEndian, firstIfdOffset)) {
+        return std::nullopt;
+    }
+
+    const std::optional<uint32_t> exifIfdOffset = FindExifIfdOffset(exif, firstIfdOffset, littleEndian);
+    if (exifIfdOffset.has_value()) {
+        for (const uint16_t tag : {tagDateTimeOriginal, tagDateTimeDigitized}) {
+            const std::optional<std::string> value =
+                ReadAsciiTag(exif, *exifIfdOffset, littleEndian, {tag});
+            if (value.has_value()) {
+                const std::optional<std::string> formatted = FormatExifDateTime(*value);
+                if (formatted.has_value()) {
+                    return formatted;
+                }
+            }
+        }
+    }
+
+    const std::optional<std::string> fallback = ReadAsciiTag(exif, firstIfdOffset, littleEndian, {tagDateTime});
+    return fallback.has_value() ? FormatExifDateTime(*fallback) : std::nullopt;
 }
 
 } // namespace heic_converter

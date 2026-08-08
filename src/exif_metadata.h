@@ -3,6 +3,7 @@
 #include "localization.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,5 +19,7 @@ bool ExtractExifMetadata(
     std::string& errorMessage);
 
 void NormalizeExifMetadata(std::vector<uint8_t>& exif, uint32_t width, uint32_t height);
+
+std::optional<std::string> ExtractExifDateTime(const std::vector<uint8_t>& exif);
 
 } // namespace heic_converter

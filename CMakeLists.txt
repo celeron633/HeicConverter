@@ -71,6 +71,8 @@ add_library(HeicConverterCore STATIC
     src/exif_metadata.h
     src/file_operations.cpp
     src/file_operations.h
+    src/file_naming.cpp
+    src/file_naming.h
     src/image_converter.cpp
     src/image_converter.h
     src/image_writers.cpp

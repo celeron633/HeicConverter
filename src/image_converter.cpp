@@ -36,8 +36,11 @@ bool ConvertImage(
     int pngCompressionLevel,
     int jpegQuality,
     bool preserveExif,
+    bool extractExifDateTime,
     Language language,
+    std::optional<std::string>& exifDateTime,
     std::string& errorMessage) {
+    exifDateTime.reset();
     std::ifstream stream(input, std::ios::binary | std::ios::ate);
     if (!stream) {
         errorMessage = SelectText(language, "无法打开 HEIC 文件", "Could not open the HEIC file");
@@ -85,8 +88,12 @@ bool ConvertImage(
     HeifHandlePtr handle(rawHandle, &heif_image_handle_release);
 
     std::vector<uint8_t> exif;
-    if (!ExtractExifMetadata(handle.get(), preserveExif, language, exif, errorMessage)) {
+    if (!ExtractExifMetadata(
+            handle.get(), preserveExif || extractExifDateTime, language, exif, errorMessage)) {
         return false;
+    }
+    if (extractExifDateTime) {
+        exifDateTime = ExtractExifDateTime(exif);
     }
 
     heif_image* rawImage = nullptr;
@@ -112,6 +119,9 @@ bool ConvertImage(
     }
 
     NormalizeExifMetadata(exif, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    if (!preserveExif) {
+        exif.clear();
+    }
 
     if (outputFormat == OutputFormat::Jpeg) {
         return WriteJpeg(

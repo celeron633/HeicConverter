@@ -1,5 +1,6 @@
 #pragma once
 
+#include "file_naming.h"
 #include "localization.h"
 #include "output_format.h"
 
@@ -23,6 +24,7 @@ struct ConversionOptions {
     // Zero selects a worker count automatically from the available logical CPUs.
     size_t workerCount = 0;
     Language language = Language::Chinese;
+    FileNamingOptions fileNaming;
 };
 
 struct ConversionSnapshot {

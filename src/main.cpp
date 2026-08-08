@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -173,12 +174,30 @@ void DrawInterface(HWND window, ConversionController& controller) {
         return static_cast<int>(std::clamp(detected == 0 ? 1U : detected, 1U, 32U));
     }();
     static int languageSelection = 0;
+    static bool customNamingEnabled = false;
+    static std::string namingText = "Photo";
+    static std::string namingPattern = "{text}_{datetime}_{seq}";
+    static int sequenceStart = 1;
+    static int sequenceDigits = 4;
     static bool scrollToBottom = false;
     static size_t previousLogSize = 0;
 
     const Language language = languageSelection == 1 ? Language::English : Language::Chinese;
     const UiStrings& strings = GetUiStrings(language);
     const ConversionSnapshot snapshot = controller.Snapshot();
+    FileNamingOptions fileNamingOptions;
+    fileNamingOptions.enabled = customNamingEnabled;
+    fileNamingOptions.pattern = namingPattern;
+    fileNamingOptions.customText = namingText;
+    fileNamingOptions.sequenceStart = static_cast<uint64_t>(std::max(sequenceStart, 0));
+    fileNamingOptions.sequenceDigits = sequenceDigits;
+    const heic_converter::FileNamingResult namingPreview = heic_converter::BuildFileStem(
+        fileNamingOptions,
+        "IMG_1234",
+        std::optional<std::string>("20260808_183045"),
+        0,
+        language);
+    const bool namingValid = !customNamingEnabled || namingPreview.success;
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -198,140 +217,194 @@ void DrawInterface(HWND window, ConversionController& controller) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::BeginDisabled(snapshot.running);
-    ImGui::SetNextItemWidth(-112.0F);
-    ImGui::InputTextWithHint("##folder", strings.folderHint, &folder);
-    ImGui::SameLine();
-    if (ImGui::Button(strings.browse, ImVec2(100.0F, 0.0F))) {
-        const std::string picked = PickFolder(window, strings.folderDialogTitle);
-        if (!picked.empty()) {
-            folder = picked;
+    if (ImGui::BeginTabBar("##main-tabs")) {
+        if (ImGui::BeginTabItem(strings.conversionTab)) {
+            ImGui::BeginDisabled(snapshot.running);
+            ImGui::SetNextItemWidth(-112.0F);
+            ImGui::InputTextWithHint("##folder", strings.folderHint, &folder);
+            ImGui::SameLine();
+            if (ImGui::Button(strings.browse, ImVec2(100.0F, 0.0F))) {
+                const std::string picked = PickFolder(window, strings.folderDialogTitle);
+                if (!picked.empty()) {
+                    folder = picked;
+                }
+            }
+
+            ImGui::Checkbox(strings.searchSubdirectories, &recursive);
+            ImGui::SameLine();
+            ImGui::Checkbox(strings.overwriteExisting, &overwriteExisting);
+
+            ImGui::Checkbox(strings.preserveExif, &preserveExif);
+            ImGui::SameLine();
+            ImGui::Checkbox(strings.deleteOriginals, &deleteOriginals);
+
+            ImGui::TextUnformatted(strings.outputFormat);
+            ImGui::SameLine(130.0F);
+            ImGui::RadioButton(strings.pngOption, &outputFormat, 0);
+            ImGui::SameLine();
+            ImGui::RadioButton(strings.jpegOption, &outputFormat, 1);
+            ImGui::SetNextItemWidth(360.0F);
+            if (outputFormat == 0) {
+                ImGui::SliderInt("##png-compression", &pngCompressionLevel, 0, 9, strings.pngCompressionFormat);
+            } else {
+                ImGui::SliderInt("##jpeg-quality", &jpegQuality, 1, 100, strings.jpegQualityFormat);
+            }
+
+            const unsigned int detectedThreads = std::thread::hardware_concurrency();
+            const int maximumWorkerCount =
+                static_cast<int>(std::clamp(detectedThreads == 0 ? 1U : detectedThreads, 1U, 32U));
+            ImGui::TextUnformatted(strings.parallelThreads);
+            ImGui::SameLine(130.0F);
+            ImGui::SetNextItemWidth(260.0F);
+            ImGui::SliderInt("##worker-count", &workerCount, 1, maximumWorkerCount, strings.workerCountFormat);
+            ImGui::SameLine();
+            ImGui::TextDisabled(strings.detectedProcessorsFormat, detectedThreads == 0 ? 1U : detectedThreads);
+
+            bool folderValid = false;
+            try {
+                if (!folder.empty()) {
+                    std::error_code error;
+                    folderValid = std::filesystem::is_directory(Utf8ToWide(folder), error) && !error;
+                }
+            } catch (...) {
+                folderValid = false;
+            }
+
+            ImGui::BeginDisabled(!folderValid || !namingValid);
+            if (ImGui::Button(strings.start, ImVec2(160.0F, 38.0F))) {
+                ConversionOptions options;
+                options.folder = Utf8ToWide(folder);
+                options.recursive = recursive;
+                options.deleteOriginals = deleteOriginals;
+                options.overwriteExisting = overwriteExisting;
+                options.preserveExif = preserveExif;
+                options.outputFormat = outputFormat == 1 ? OutputFormat::Jpeg : OutputFormat::Png;
+                options.pngCompressionLevel = pngCompressionLevel;
+                options.jpegQuality = jpegQuality;
+                options.workerCount = static_cast<size_t>(workerCount);
+                options.language = language;
+                options.fileNaming = fileNamingOptions;
+                controller.Start(std::move(options));
+            }
+            ImGui::EndDisabled();
+            ImGui::EndDisabled();
+
+            if (snapshot.running) {
+                ImGui::SameLine();
+                if (ImGui::Button(snapshot.cancellationRequested ? strings.stopping : strings.cancel,
+                                  ImVec2(160.0F, 38.0F)) &&
+                    !snapshot.cancellationRequested) {
+                    controller.Cancel();
+                }
+            }
+
+            ImGui::Spacing();
+            const float progress = snapshot.total == 0
+                                       ? 0.0F
+                                       : static_cast<float>(snapshot.processed) / static_cast<float>(snapshot.total);
+            std::string overlay = std::to_string(snapshot.processed) + " / " + std::to_string(snapshot.total);
+            ImGui::ProgressBar(std::clamp(progress, 0.0F, 1.0F), ImVec2(-1.0F, 26.0F), overlay.c_str());
+            ImGui::Text(strings.statusFormat, snapshot.status.c_str());
+            ImGui::Text(strings.summaryFormat, snapshot.succeeded, snapshot.failed, snapshot.skipped,
+                        snapshot.activeWorkers, snapshot.workerCount);
+            if (!snapshot.currentFile.empty()) {
+                ImGui::TextWrapped(strings.currentFormat, snapshot.currentFile.c_str());
+            }
+
+            ImGui::Spacing();
+            ImGui::SeparatorText(strings.processingLog);
+            const float footerHeight = ImGui::GetFrameHeightWithSpacing();
+            ImGui::BeginChild("log", ImVec2(0.0F, -footerHeight), ImGuiChildFlags_Borders,
+                              ImGuiWindowFlags_HorizontalScrollbar);
+            ImGui::PushFont(nullptr, 15.0F);
+            for (const std::string &line : snapshot.log) {
+                if (line.rfind(strings.failurePrefix, 0) == 0 || line.rfind(strings.taskFailurePrefix, 0) == 0) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.42F, 0.42F, 1.0F));
+                    ImGui::TextUnformatted(line.c_str());
+                    ImGui::PopStyleColor();
+                } else if (line.rfind(strings.skippedPrefix, 0) == 0 || line.rfind(strings.scanWarningPrefix, 0) == 0) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.78F, 0.35F, 1.0F));
+                    ImGui::TextUnformatted(line.c_str());
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::TextUnformatted(line.c_str());
+                }
+            }
+            if (snapshot.log.size() != previousLogSize) {
+                scrollToBottom = true;
+                previousLogSize = snapshot.log.size();
+            }
+            if (scrollToBottom) {
+                ImGui::SetScrollHereY(1.0F);
+                scrollToBottom = false;
+            }
+            ImGui::PopFont();
+            ImGui::EndChild();
+            ImGui::TextDisabled("%s", strings.tip);
+
+            ImGui::EndTabItem();
         }
-    }
 
-    ImGui::Checkbox(strings.searchSubdirectories, &recursive);
-    ImGui::SameLine();
-    ImGui::Checkbox(strings.overwriteExisting, &overwriteExisting);
+        if (ImGui::BeginTabItem(strings.namingTab)) {
+            ImGui::BeginDisabled(snapshot.running);
+            ImGui::Checkbox(strings.enableCustomNaming, &customNamingEnabled);
+            ImGui::Spacing();
+            ImGui::BeginDisabled(!customNamingEnabled);
+            ImGui::TextWrapped("%s", strings.namingDescription);
 
-    ImGui::Checkbox(strings.preserveExif, &preserveExif);
-    ImGui::SameLine();
-    ImGui::Checkbox(strings.deleteOriginals, &deleteOriginals);
+            ImGui::TextUnformatted(strings.customTextLabel);
+            ImGui::SetNextItemWidth(-1.0F);
+            ImGui::InputTextWithHint("##naming-text", strings.customTextHint, &namingText);
 
-    ImGui::TextUnformatted(strings.outputFormat);
-    ImGui::SameLine(130.0F);
-    ImGui::RadioButton(strings.pngOption, &outputFormat, 0);
-    ImGui::SameLine();
-    ImGui::RadioButton(strings.jpegOption, &outputFormat, 1);
-    ImGui::SetNextItemWidth(360.0F);
-    if (outputFormat == 0) {
-        ImGui::SliderInt(
-            "##png-compression",
-            &pngCompressionLevel,
-            0,
-            9,
-            strings.pngCompressionFormat);
-    } else {
-        ImGui::SliderInt("##jpeg-quality", &jpegQuality, 1, 100, strings.jpegQualityFormat);
-    }
+            ImGui::TextUnformatted(strings.namingPatternLabel);
+            ImGui::SetNextItemWidth(-1.0F);
+            ImGui::InputTextWithHint("##naming-pattern", strings.namingPatternHint, &namingPattern);
+            if (ImGui::Button(strings.appendTextToken)) {
+                namingPattern += "{text}";
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(strings.appendDateTimeToken)) {
+                namingPattern += "{datetime}";
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(strings.appendSequenceToken)) {
+                namingPattern += "{seq}";
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(strings.resetPattern)) {
+                namingPattern = "{text}_{datetime}_{seq}";
+            }
 
-    const unsigned int detectedThreads = std::thread::hardware_concurrency();
-    const int maximumWorkerCount = static_cast<int>(std::clamp(detectedThreads == 0 ? 1U : detectedThreads, 1U, 32U));
-    ImGui::TextUnformatted(strings.parallelThreads);
-    ImGui::SameLine(130.0F);
-    ImGui::SetNextItemWidth(260.0F);
-    ImGui::SliderInt("##worker-count", &workerCount, 1, maximumWorkerCount, strings.workerCountFormat);
-    ImGui::SameLine();
-    ImGui::TextDisabled(strings.detectedProcessorsFormat, detectedThreads == 0 ? 1U : detectedThreads);
+            ImGui::TextUnformatted(strings.sequenceStart);
+            ImGui::SameLine(180.0F);
+            ImGui::SetNextItemWidth(180.0F);
+            ImGui::InputInt("##sequence-start", &sequenceStart, 1, 100);
+            sequenceStart = std::max(sequenceStart, 0);
 
-    bool folderValid = false;
-    try {
-        if (!folder.empty()) {
-            std::error_code error;
-            folderValid = std::filesystem::is_directory(Utf8ToWide(folder), error) && !error;
+            ImGui::TextUnformatted(strings.sequenceDigits);
+            ImGui::SameLine(180.0F);
+            ImGui::SetNextItemWidth(260.0F);
+            ImGui::SliderInt("##sequence-digits", &sequenceDigits, 1, 12, "%d");
+
+            ImGui::Spacing();
+            ImGui::TextDisabled("%s", strings.namingPlaceholders);
+            ImGui::TextWrapped("%s", strings.namingFallback);
+            ImGui::Separator();
+
+            if (namingPreview.success) {
+                const std::string extension = outputFormat == 1 ? ".jpg" : ".png";
+                ImGui::Text(strings.namingPreviewFormat, (namingPreview.stem + extension).c_str());
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.42F, 0.42F, 1.0F));
+                ImGui::TextWrapped(strings.namingPreviewErrorFormat, namingPreview.error.c_str());
+                ImGui::PopStyleColor();
+            }
+            ImGui::EndDisabled();
+            ImGui::EndDisabled();
+            ImGui::EndTabItem();
         }
-    } catch (...) {
-        folderValid = false;
+        ImGui::EndTabBar();
     }
-
-    ImGui::BeginDisabled(!folderValid);
-    if (ImGui::Button(strings.start, ImVec2(160.0F, 38.0F))) {
-        ConversionOptions options;
-        options.folder = Utf8ToWide(folder);
-        options.recursive = recursive;
-        options.deleteOriginals = deleteOriginals;
-        options.overwriteExisting = overwriteExisting;
-        options.preserveExif = preserveExif;
-        options.outputFormat = outputFormat == 1 ? OutputFormat::Jpeg : OutputFormat::Png;
-        options.pngCompressionLevel = pngCompressionLevel;
-        options.jpegQuality = jpegQuality;
-        options.workerCount = static_cast<size_t>(workerCount);
-        options.language = language;
-        controller.Start(std::move(options));
-    }
-    ImGui::EndDisabled();
-    ImGui::EndDisabled();
-
-    if (snapshot.running) {
-        ImGui::SameLine();
-        if (ImGui::Button(
-                snapshot.cancellationRequested ? strings.stopping : strings.cancel,
-                ImVec2(160.0F, 38.0F)) &&
-            !snapshot.cancellationRequested) {
-            controller.Cancel();
-        }
-    }
-
-    ImGui::Spacing();
-    const float progress = snapshot.total == 0
-                               ? 0.0F
-                               : static_cast<float>(snapshot.processed) / static_cast<float>(snapshot.total);
-    std::string overlay = std::to_string(snapshot.processed) + " / " + std::to_string(snapshot.total);
-    ImGui::ProgressBar(std::clamp(progress, 0.0F, 1.0F), ImVec2(-1.0F, 26.0F), overlay.c_str());
-    ImGui::Text(strings.statusFormat, snapshot.status.c_str());
-    ImGui::Text(
-        strings.summaryFormat,
-        snapshot.succeeded,
-        snapshot.failed,
-        snapshot.skipped,
-        snapshot.activeWorkers,
-        snapshot.workerCount);
-    if (!snapshot.currentFile.empty()) {
-        ImGui::TextWrapped(strings.currentFormat, snapshot.currentFile.c_str());
-    }
-
-    ImGui::Spacing();
-    ImGui::SeparatorText(strings.processingLog);
-    const float footerHeight = ImGui::GetFrameHeightWithSpacing();
-    ImGui::BeginChild(
-        "log",
-        ImVec2(0.0F, -footerHeight),
-        ImGuiChildFlags_Borders,
-        ImGuiWindowFlags_HorizontalScrollbar);
-    ImGui::PushFont(nullptr, 15.0F);
-    for (const std::string& line : snapshot.log) {
-        if (line.rfind(strings.failurePrefix, 0) == 0 || line.rfind(strings.taskFailurePrefix, 0) == 0) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.42F, 0.42F, 1.0F));
-            ImGui::TextUnformatted(line.c_str());
-            ImGui::PopStyleColor();
-        } else if (line.rfind(strings.skippedPrefix, 0) == 0 || line.rfind(strings.scanWarningPrefix, 0) == 0) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.78F, 0.35F, 1.0F));
-            ImGui::TextUnformatted(line.c_str());
-            ImGui::PopStyleColor();
-        } else {
-            ImGui::TextUnformatted(line.c_str());
-        }
-    }
-    if (snapshot.log.size() != previousLogSize) {
-        scrollToBottom = true;
-        previousLogSize = snapshot.log.size();
-    }
-    if (scrollToBottom) {
-        ImGui::SetScrollHereY(1.0F);
-        scrollToBottom = false;
-    }
-    ImGui::PopFont();
-    ImGui::EndChild();
-    ImGui::TextDisabled("%s", strings.tip);
 
     ImGui::End();
 }

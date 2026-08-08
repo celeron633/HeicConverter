@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -134,6 +135,45 @@ bool MetadataWritersPass(const std::filesystem::path& directory) {
     return true;
 }
 
+bool ExifDateTimeAndNamingPass() {
+    // TIFF with IFD0 -> ExifIFD -> DateTimeOriginal = "2026:08:08 18:30:45".
+    const std::vector<uint8_t> dateExif = {
+        'I', 'I', 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00,
+        0x01, 0x00,
+        0x69, 0x87, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x1A, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00,
+        0x03, 0x90, 0x02, 0x00, 0x14, 0x00, 0x00, 0x00, 0x2C, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        '2', '0', '2', '6', ':', '0', '8', ':', '0', '8', ' ', '1', '8', ':', '3', '0', ':', '4', '5', 0,
+    };
+    const std::optional<std::string> dateTime = heic_converter::ExtractExifDateTime(dateExif);
+    if (!dateTime.has_value() || *dateTime != "20260808_183045") {
+        return false;
+    }
+
+    FileNamingOptions options;
+    options.enabled = true;
+    options.pattern = "{text}_{datetime}_{seq}";
+    options.customText = "Trip";
+    options.sequenceStart = 7;
+    options.sequenceDigits = 4;
+    const heic_converter::FileNamingResult named =
+        heic_converter::BuildFileStem(options, "IMG_1234", dateTime, 2, Language::English);
+    if (!named.success || !named.usedCustomName || named.stem != "Trip_20260808_183045_0009") {
+        return false;
+    }
+
+    const heic_converter::FileNamingResult fallback =
+        heic_converter::BuildFileStem(options, "IMG_1234", std::nullopt, 2, Language::English);
+    if (!fallback.success || fallback.usedCustomName || fallback.stem != "IMG_1234") {
+        return false;
+    }
+
+    options.pattern = "{unknown}";
+    return !heic_converter::BuildFileStem(options, "IMG_1234", dateTime, 0, Language::English).success;
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv) {
@@ -173,6 +213,9 @@ int wmain(int argc, wchar_t** argv) {
         options.recursive = true;
         options.deleteOriginals = true;
         options.workerCount = 3;
+        options.fileNaming.enabled = true;
+        options.fileNaming.pattern = "{text}_{datetime}_{seq}";
+        options.fileNaming.customText = "Photo";
         if (!controller.Start(options)) {
             std::cerr << "Could not start conversion.\n";
             return 1;
@@ -249,8 +292,8 @@ int wmain(int argc, wchar_t** argv) {
             return 1;
         }
 
-        if (!MetadataWritersPass(temporary.Path())) {
-            std::cerr << "PNG/JPEG EXIF metadata preservation failed.\n";
+        if (!MetadataWritersPass(temporary.Path()) || !ExifDateTimeAndNamingPass()) {
+            std::cerr << "PNG/JPEG EXIF metadata or custom filename handling failed.\n";
             return 1;
         }
 
