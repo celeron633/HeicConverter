@@ -10,6 +10,10 @@ const char* SelectText(Language language, const char* chinese, const char* engli
 struct UiStrings {
     const char* heading;
     const char* subtitle;
+    const char* fileMenu;
+    const char* exitMenuItem;
+    const char* settingsMenu;
+    const char* languageMenu;
     const char* conversionTab;
     const char* namingTab;
     const char* logTab;

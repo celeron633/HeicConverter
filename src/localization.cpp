@@ -8,6 +8,10 @@ const UiStrings& GetUiStrings(Language language) {
     static constexpr UiStrings chinese{
         "HEIC → PNG / JPG 批量转换",
         "libheif 解码 · libpng / libjpeg-turbo 导出",
+        "文件",
+        "退出",
+        "设置",
+        "语言",
         "转换",
         "文件命名",
         "日志",
@@ -57,6 +61,10 @@ const UiStrings& GetUiStrings(Language language) {
     static constexpr UiStrings english{
         "HEIC → PNG / JPG Batch Converter",
         "Decoded by libheif · Exported by libpng / libjpeg-turbo",
+        "File",
+        "Exit",
+        "Settings",
+        "Language",
         "Conversion",
         "File naming",
         "Log",

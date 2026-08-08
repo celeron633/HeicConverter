@@ -203,16 +203,34 @@ void DrawInterface(HWND window, ConversionController& controller) {
     ImGui::SetNextWindowSize(viewport->WorkSize);
 
     constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
+                                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                       ImGuiWindowFlags_MenuBar;
     ImGui::Begin("HeicConverter", nullptr, flags);
+
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu(strings.fileMenu)) {
+            if (ImGui::MenuItem(strings.exitMenuItem)) {
+                PostMessageW(window, WM_CLOSE, 0, 0);
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu(strings.settingsMenu)) {
+            if (ImGui::BeginMenu(strings.languageMenu)) {
+                if (ImGui::MenuItem("English", nullptr, languageSelection == 1)) {
+                    languageSelection = 1;
+                }
+                if (ImGui::MenuItem("中文", nullptr, languageSelection == 0)) {
+                    languageSelection = 0;
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
 
     ImGui::TextUnformatted(strings.heading);
     ImGui::TextDisabled("%s", strings.subtitle);
-    ImGui::TextUnformatted("语言 / Language:");
-    ImGui::SameLine();
-    ImGui::RadioButton("中文##language-chinese", &languageSelection, 0);
-    ImGui::SameLine();
-    ImGui::RadioButton("English##language-english", &languageSelection, 1);
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
