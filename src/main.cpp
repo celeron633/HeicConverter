@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <string>
+#include <thread>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -165,6 +166,10 @@ void DrawInterface(HWND window, ConversionController& controller) {
     static bool overwriteExisting = false;
     static int outputFormat = 0;
     static int jpegQuality = 92;
+    static int workerCount = [] {
+        const unsigned int detected = std::thread::hardware_concurrency();
+        return static_cast<int>(std::clamp(detected == 0 ? 1U : detected, 1U, 32U));
+    }();
     static bool scrollToBottom = false;
     static size_t previousLogSize = 0;
 
@@ -211,6 +216,15 @@ void DrawInterface(HWND window, ConversionController& controller) {
         ImGui::SliderInt("##jpeg-quality", &jpegQuality, 1, 100, "质量 %d");
     }
 
+    const unsigned int detectedThreads = std::thread::hardware_concurrency();
+    const int maximumWorkerCount = static_cast<int>(std::clamp(detectedThreads == 0 ? 1U : detectedThreads, 1U, 32U));
+    ImGui::TextUnformatted("并行线程:");
+    ImGui::SameLine(105.0F);
+    ImGui::SetNextItemWidth(260.0F);
+    ImGui::SliderInt("##worker-count", &workerCount, 1, maximumWorkerCount, "%d 个线程");
+    ImGui::SameLine();
+    ImGui::TextDisabled("（检测到 %u 个逻辑处理器）", detectedThreads == 0 ? 1U : detectedThreads);
+
     bool folderValid = false;
     try {
         if (!folder.empty()) {
@@ -230,6 +244,7 @@ void DrawInterface(HWND window, ConversionController& controller) {
         options.overwriteExisting = overwriteExisting;
         options.outputFormat = outputFormat == 1 ? OutputFormat::Jpeg : OutputFormat::Png;
         options.jpegQuality = jpegQuality;
+        options.workerCount = static_cast<size_t>(workerCount);
         controller.Start(std::move(options));
     }
     ImGui::EndDisabled();
@@ -251,10 +266,12 @@ void DrawInterface(HWND window, ConversionController& controller) {
     ImGui::ProgressBar(std::clamp(progress, 0.0F, 1.0F), ImVec2(-1.0F, 26.0F), overlay.c_str());
     ImGui::Text("状态: %s", snapshot.status.c_str());
     ImGui::Text(
-        "成功 %zu    失败 %zu    跳过 %zu",
+        "成功 %zu    失败 %zu    跳过 %zu    活跃线程 %zu / %zu",
         snapshot.succeeded,
         snapshot.failed,
-        snapshot.skipped);
+        snapshot.skipped,
+        snapshot.activeWorkers,
+        snapshot.workerCount);
     if (!snapshot.currentFile.empty()) {
         ImGui::TextWrapped("当前: %s", snapshot.currentFile.c_str());
     }

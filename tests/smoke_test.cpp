@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <filesystem>
@@ -9,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -69,15 +71,23 @@ int wmain(int argc, wchar_t** argv) {
 
         const std::filesystem::path nested = temporary.Path() / L"子目录";
         std::filesystem::create_directory(nested);
-        const std::filesystem::path input = nested / L"样例.HEIC";
-        const std::filesystem::path output = nested / L"样例.png";
-        std::filesystem::copy_file(sample, input);
+        const std::array<std::wstring, 4> stems = {L"样例一", L"样例二", L"样例三", L"样例四"};
+        std::vector<std::filesystem::path> inputs;
+        std::vector<std::filesystem::path> pngOutputs;
+        std::vector<std::filesystem::path> jpegOutputs;
+        for (const std::wstring& stem : stems) {
+            inputs.push_back(nested / (stem + L".HEIC"));
+            pngOutputs.push_back(nested / (stem + L".png"));
+            jpegOutputs.push_back(nested / (stem + L".jpg"));
+            std::filesystem::copy_file(sample, inputs.back());
+        }
 
         ConversionController controller;
         ConversionOptions options;
         options.folder = temporary.Path();
         options.recursive = true;
         options.deleteOriginals = true;
+        options.workerCount = 3;
         if (!controller.Start(options)) {
             std::cerr << "Could not start conversion.\n";
             return 1;
@@ -95,8 +105,15 @@ int wmain(int argc, wchar_t** argv) {
             std::cerr << "Conversion timed out.\n";
             return 1;
         }
-        if (snapshot.total != 1 || snapshot.succeeded != 1 || snapshot.failed != 0 || std::filesystem::exists(input) ||
-            !HasPngSignature(output)) {
+        const bool pngInputsDeleted = std::none_of(inputs.begin(), inputs.end(), [](const auto& input) {
+            return std::filesystem::exists(input);
+        });
+        const bool pngOutputsValid = std::all_of(pngOutputs.begin(), pngOutputs.end(), [](const auto& output) {
+            return HasPngSignature(output);
+        });
+        if (snapshot.total != inputs.size() || snapshot.succeeded != inputs.size() || snapshot.failed != 0 ||
+            snapshot.workerCount != options.workerCount || snapshot.activeWorkers != 0 || !pngInputsDeleted ||
+            !pngOutputsValid) {
             std::cerr << "Unexpected result: total=" << snapshot.total << " succeeded=" << snapshot.succeeded
                       << " failed=" << snapshot.failed << " status=" << snapshot.status << '\n';
             for (const auto& line : snapshot.log) {
@@ -105,8 +122,9 @@ int wmain(int argc, wchar_t** argv) {
             return 1;
         }
 
-        const std::filesystem::path jpegOutput = nested / L"样例.jpg";
-        std::filesystem::copy_file(sample, input);
+        for (const auto& input : inputs) {
+            std::filesystem::copy_file(sample, input);
+        }
         options.outputFormat = OutputFormat::Jpeg;
         options.jpegQuality = 87;
         if (!controller.Start(options)) {
@@ -125,8 +143,15 @@ int wmain(int argc, wchar_t** argv) {
             std::cerr << "JPEG conversion timed out.\n";
             return 1;
         }
-        if (snapshot.total != 1 || snapshot.succeeded != 1 || snapshot.failed != 0 || std::filesystem::exists(input) ||
-            !HasJpegSignature(jpegOutput)) {
+        const bool jpegInputsDeleted = std::none_of(inputs.begin(), inputs.end(), [](const auto& input) {
+            return std::filesystem::exists(input);
+        });
+        const bool jpegOutputsValid = std::all_of(jpegOutputs.begin(), jpegOutputs.end(), [](const auto& output) {
+            return HasJpegSignature(output);
+        });
+        if (snapshot.total != inputs.size() || snapshot.succeeded != inputs.size() || snapshot.failed != 0 ||
+            snapshot.workerCount != options.workerCount || snapshot.activeWorkers != 0 || !jpegInputsDeleted ||
+            !jpegOutputsValid) {
             std::cerr << "Unexpected JPEG result: total=" << snapshot.total << " succeeded=" << snapshot.succeeded
                       << " failed=" << snapshot.failed << " status=" << snapshot.status << '\n';
             for (const auto& line : snapshot.log) {
@@ -135,7 +160,7 @@ int wmain(int argc, wchar_t** argv) {
             return 1;
         }
 
-        std::cout << "Recursive PNG/JPEG conversion and delete-original behavior passed.\n";
+        std::cout << "Parallel recursive PNG/JPEG conversion and delete-original behavior passed.\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

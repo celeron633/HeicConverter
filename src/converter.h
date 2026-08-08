@@ -1,5 +1,7 @@
 #pragma once
 
+#include "output_format.h"
+
 #include <atomic>
 #include <cstddef>
 #include <filesystem>
@@ -8,11 +10,6 @@
 #include <thread>
 #include <vector>
 
-enum class OutputFormat {
-    Png,
-    Jpeg,
-};
-
 struct ConversionOptions {
     std::filesystem::path folder;
     bool recursive = true;
@@ -20,6 +17,8 @@ struct ConversionOptions {
     bool overwriteExisting = false;
     OutputFormat outputFormat = OutputFormat::Png;
     int jpegQuality = 92;
+    // Zero selects a worker count automatically from the available logical CPUs.
+    size_t workerCount = 0;
 };
 
 struct ConversionSnapshot {
@@ -30,6 +29,8 @@ struct ConversionSnapshot {
     size_t succeeded = 0;
     size_t failed = 0;
     size_t skipped = 0;
+    size_t workerCount = 0;
+    size_t activeWorkers = 0;
     std::string currentFile;
     std::string status;
     std::vector<std::string> log;
@@ -49,7 +50,6 @@ public:
 
 private:
     void Run(ConversionOptions options);
-    void AddLog(std::string line);
 
     mutable std::mutex mutex_;
     std::thread worker_;
@@ -60,6 +60,8 @@ private:
     size_t succeeded_ = 0;
     size_t failed_ = 0;
     size_t skipped_ = 0;
+    size_t workerCount_ = 0;
+    size_t activeWorkers_ = 0;
     std::string currentFile_;
     std::string status_ = "就绪";
     std::vector<std::string> log_;

@@ -64,12 +64,43 @@ else()
     message(FATAL_ERROR "libheif was found, but no supported CMake target was exported.")
 endif()
 
-add_executable(HeicConverter WIN32
-    src/main.cpp
+add_library(HeicConverterCore STATIC
     src/converter.cpp
     src/converter.h
+    src/file_operations.cpp
+    src/file_operations.h
+    src/image_converter.cpp
+    src/image_converter.h
+    src/image_writers.cpp
+    src/image_writers.h
+    src/output_format.h
     src/utf8.cpp
     src/utf8.h
+)
+
+target_include_directories(HeicConverterCore PUBLIC src)
+
+target_compile_definitions(HeicConverterCore PRIVATE
+    UNICODE
+    _UNICODE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    WINVER=0x0A00
+    _WIN32_WINNT=0x0A00
+)
+
+if(MSVC)
+    target_compile_options(HeicConverterCore PRIVATE /W4 /permissive- /utf-8 /EHsc)
+endif()
+
+target_link_libraries(HeicConverterCore PRIVATE
+    ${HEICCONVERTER_HEIF_TARGET}
+    PNG::PNG
+    libjpeg_turbo_static
+)
+
+add_executable(HeicConverter WIN32
+    src/main.cpp
     app.manifest
 )
 
@@ -87,9 +118,7 @@ if(MSVC)
 endif()
 
 target_link_libraries(HeicConverter PRIVATE
-    ${HEICCONVERTER_HEIF_TARGET}
-    PNG::PNG
-    libjpeg_turbo_static
+    HeicConverterCore
     imgui::imgui
     d3d11
     dxgi
@@ -104,18 +133,13 @@ include(CTest)
 if(BUILD_TESTING)
     add_executable(HeicConverterSmokeTest
         tests/smoke_test.cpp
-        src/converter.cpp
-        src/converter.h
-        src/utf8.cpp
-        src/utf8.h
     )
-    target_include_directories(HeicConverterSmokeTest PRIVATE src)
     target_compile_definitions(HeicConverterSmokeTest PRIVATE
         UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX WINVER=0x0A00 _WIN32_WINNT=0x0A00)
     if(MSVC)
         target_compile_options(HeicConverterSmokeTest PRIVATE /W4 /permissive- /utf-8 /EHsc)
     endif()
-    target_link_libraries(HeicConverterSmokeTest PRIVATE ${HEICCONVERTER_HEIF_TARGET} PNG::PNG libjpeg_turbo_static)
+    target_link_libraries(HeicConverterSmokeTest PRIVATE HeicConverterCore)
 
     set(HEICCONVERTER_TEST_HEIC "" CACHE FILEPATH "Optional HEIC file used by the conversion smoke test")
     if(HEICCONVERTER_TEST_HEIC)
