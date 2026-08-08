@@ -1,0 +1,154 @@
+name: Windows build and package
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: windows-package-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-x64:
+    name: Windows x64 static Release
+    runs-on: windows-2022
+    timeout-minutes: 60
+
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\.vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.cache\vcpkg
+
+    steps:
+      - name: Check out HeicConverter
+        uses: actions/checkout@v6
+
+      - name: Check out pinned vcpkg
+        uses: actions/checkout@v6
+        with:
+          repository: microsoft/vcpkg
+          ref: c4d9956c0c10a4742840a5e7d93efa2e0015c865
+          path: .vcpkg
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v5
+        with:
+          path: .cache/vcpkg
+          key: vcpkg-windows-x64-static-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-windows-x64-static-
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg bootstrap failed." }
+
+      - name: Download verified HEIC test image
+        id: sample
+        shell: pwsh
+        run: |
+          $sample = Join-Path $env:RUNNER_TEMP "libheif-example.heic"
+          Invoke-WebRequest `
+            -Uri "https://raw.githubusercontent.com/strukturag/libheif/v1.23.1/examples/example.heic" `
+            -OutFile $sample
+          $expected = "7F8B363E4936C0666A25F64F3A92FDA10BD8E5453BE4592530B65A55DD98F3F2"
+          $actual = (Get-FileHash $sample -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw "HEIC test image checksum mismatch." }
+          "path=$sample" >> $env:GITHUB_OUTPUT
+
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            "-DVCPKG_TARGET_TRIPLET=x64-windows-static" `
+            "-DHEICCONVERTER_TEST_HEIC=${{ steps.sample.outputs.path }}"
+          if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed." }
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { throw "Release build failed." }
+
+      - name: Run PNG and JPG smoke tests
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw "Smoke tests failed." }
+
+      - name: Create distribution ZIP
+        shell: pwsh
+        run: |
+          $packageDirectory = Join-Path $PWD "package\HeicConverter-windows-x64"
+          $licenseDirectory = Join-Path $packageDirectory "licenses"
+          New-Item -ItemType Directory -Force $licenseDirectory | Out-Null
+
+          Copy-Item "build\Release\HeicConverter.exe" $packageDirectory
+          Copy-Item "LICENSE", "README.md", "THIRD_PARTY_NOTICES.md" $packageDirectory
+
+          $vcpkgShare = "build\vcpkg_installed\x64-windows-static\share"
+          foreach ($port in @("imgui", "libde265", "libheif", "libpng", "zlib")) {
+            $source = Join-Path $vcpkgShare "$port\copyright"
+            if (-not (Test-Path $source)) { throw "Missing license file for $port." }
+            Copy-Item $source (Join-Path $licenseDirectory "$port.txt")
+          }
+          Copy-Item `
+            "build\_deps\libjpeg-turbo-install\share\doc\libjpeg-turbo\LICENSE.md" `
+            (Join-Path $licenseDirectory "libjpeg-turbo.txt")
+
+          $exeHash = (Get-FileHash (Join-Path $packageDirectory "HeicConverter.exe") -Algorithm SHA256).Hash
+          "$exeHash  HeicConverter.exe" | Set-Content `
+            (Join-Path $packageDirectory "SHA256SUMS.txt") -Encoding ascii
+
+          New-Item -ItemType Directory -Force "package" | Out-Null
+          Compress-Archive -Path $packageDirectory `
+            -DestinationPath "package\HeicConverter-windows-x64.zip" -CompressionLevel Optimal
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: HeicConverter-windows-x64
+          path: package/HeicConverter-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  publish-release:
+    name: Publish tagged release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-windows-x64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download packaged artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: HeicConverter-windows-x64
+          path: release
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          archive="release/HeicConverter-windows-x64.zip"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$archive" --clobber
+          else
+            gh release create "$tag" "$archive" --verify-tag --generate-notes --title "HeicConverter $tag"
+          fi

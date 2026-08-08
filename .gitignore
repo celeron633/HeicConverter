@@ -1,0 +1,8 @@
+/.deps/
+/build/
+/dist/
+/package/
+/vcpkg_installed/
+/.vs/
+*.user
+*.suo
