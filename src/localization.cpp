@@ -1,0 +1,67 @@
+#include "localization.h"
+
+const char* SelectText(Language language, const char* chinese, const char* english) {
+    return language == Language::English ? english : chinese;
+}
+
+const UiStrings& GetUiStrings(Language language) {
+    static constexpr UiStrings chinese{
+        "HEIC → PNG / JPG 批量转换",
+        "libheif 解码 · libpng / libjpeg-turbo 导出",
+        L"选择包含 HEIC 文件的文件夹",
+        "请选择文件夹",
+        "浏览…",
+        "搜索子目录",
+        "转换成功后删除原 HEIC",
+        "覆盖已有目标文件",
+        "输出格式:",
+        "PNG（无损、支持透明）",
+        "JPG（体积较小）",
+        "质量 %d",
+        "并行线程:",
+        "%d 个线程",
+        "（检测到 %u 个逻辑处理器）",
+        "开始转换",
+        "正在停止…",
+        "取消",
+        "状态: %s",
+        "成功 %zu    失败 %zu    跳过 %zu    活跃线程 %zu / %zu",
+        "当前: %s",
+        "处理日志",
+        "提示：只有目标图片成功写入后才会删除原文件；JPG 不支持透明通道。",
+        "失败:",
+        "任务失败:",
+        "跳过:",
+        "扫描警告:",
+    };
+    static constexpr UiStrings english{
+        "HEIC → PNG / JPG Batch Converter",
+        "Decoded by libheif · Exported by libpng / libjpeg-turbo",
+        L"Select a folder containing HEIC files",
+        "Select a folder",
+        "Browse...",
+        "Search subfolders",
+        "Delete original HEIC files after conversion",
+        "Overwrite existing output files",
+        "Output format:",
+        "PNG (lossless, supports transparency)",
+        "JPG (smaller files)",
+        "Quality %d",
+        "Parallelism:",
+        "%d threads",
+        "(%u logical processors detected)",
+        "Start conversion",
+        "Stopping...",
+        "Cancel",
+        "Status: %s",
+        "Succeeded %zu    Failed %zu    Skipped %zu    Active threads %zu / %zu",
+        "Current: %s",
+        "Processing log",
+        "Note: Original files are deleted only after output succeeds; JPG does not support transparency.",
+        "Failed:",
+        "Task failed:",
+        "Skipped:",
+        "Scan warning:",
+    };
+    return language == Language::English ? english : chinese;
+}

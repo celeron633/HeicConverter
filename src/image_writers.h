@@ -1,5 +1,7 @@
 #pragma once
 
+#include "localization.h"
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -12,6 +14,7 @@ bool WritePng(
     int width,
     int height,
     int stride,
+    Language language,
     std::string& errorMessage);
 
 bool WriteJpeg(
@@ -21,6 +24,7 @@ bool WriteJpeg(
     int height,
     int stride,
     int quality,
+    Language language,
     std::string& errorMessage);
 
 } // namespace heic_converter

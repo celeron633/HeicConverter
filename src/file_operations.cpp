@@ -23,6 +23,7 @@ bool IsHeicFile(const std::filesystem::path& path) {
 std::vector<std::filesystem::path> FindHeicFiles(
     const std::filesystem::path& folder,
     bool recursive,
+    Language language,
     std::vector<std::string>& warnings) {
     std::vector<std::filesystem::path> files;
     const auto options = std::filesystem::directory_options::skip_permission_denied;
@@ -45,7 +46,8 @@ std::vector<std::filesystem::path> FindHeicFiles(
             }
         }
     } catch (const std::filesystem::filesystem_error& error) {
-        warnings.emplace_back(std::string("扫描警告: ") + error.what());
+        warnings.emplace_back(
+            std::string(SelectText(language, "扫描警告: ", "Scan warning: ")) + error.what());
     }
 
     std::sort(files.begin(), files.end());
@@ -63,6 +65,7 @@ bool CommitTemporaryFile(
     const std::filesystem::path& temporary,
     const std::filesystem::path& output,
     bool overwrite,
+    Language language,
     std::string& errorMessage) {
     DWORD flags = MOVEFILE_WRITE_THROUGH;
     if (overwrite) {
@@ -74,7 +77,11 @@ bool CommitTemporaryFile(
 
     const DWORD code = GetLastError();
     std::ostringstream stream;
-    stream << "无法保存最终图片（Windows 错误 " << code << "）";
+    if (language == Language::English) {
+        stream << "Could not save the final image (Windows error " << code << ")";
+    } else {
+        stream << "无法保存最终图片（Windows 错误 " << code << "）";
+    }
     errorMessage = stream.str();
     return false;
 }

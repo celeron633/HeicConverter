@@ -1,5 +1,6 @@
 #pragma once
 
+#include "localization.h"
 #include "output_format.h"
 
 #include <atomic>
@@ -19,6 +20,7 @@ struct ConversionOptions {
     int jpegQuality = 92;
     // Zero selects a worker count automatically from the available logical CPUs.
     size_t workerCount = 0;
+    Language language = Language::Chinese;
 };
 
 struct ConversionSnapshot {

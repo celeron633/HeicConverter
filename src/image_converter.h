@@ -1,5 +1,6 @@
 #pragma once
 
+#include "localization.h"
 #include "output_format.h"
 
 #include <filesystem>
@@ -12,6 +13,7 @@ bool ConvertImage(
     const std::filesystem::path& temporaryOutput,
     OutputFormat outputFormat,
     int jpegQuality,
+    Language language,
     std::string& errorMessage);
 
 } // namespace heic_converter

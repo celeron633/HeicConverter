@@ -107,7 +107,7 @@ void CleanupDeviceD3D() {
     }
 }
 
-std::string PickFolder(HWND owner) {
+std::string PickFolder(HWND owner, const wchar_t* title) {
     IFileOpenDialog* dialog = nullptr;
     if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
         return {};
@@ -116,7 +116,7 @@ std::string PickFolder(HWND owner) {
     DWORD flags = 0;
     dialog->GetOptions(&flags);
     dialog->SetOptions(flags | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
-    dialog->SetTitle(L"选择包含 HEIC 文件的文件夹");
+    dialog->SetTitle(title);
 
     std::string selected;
     if (SUCCEEDED(dialog->Show(owner))) {
@@ -170,9 +170,12 @@ void DrawInterface(HWND window, ConversionController& controller) {
         const unsigned int detected = std::thread::hardware_concurrency();
         return static_cast<int>(std::clamp(detected == 0 ? 1U : detected, 1U, 32U));
     }();
+    static int languageSelection = 0;
     static bool scrollToBottom = false;
     static size_t previousLogSize = 0;
 
+    const Language language = languageSelection == 1 ? Language::English : Language::Chinese;
+    const UiStrings& strings = GetUiStrings(language);
     const ConversionSnapshot snapshot = controller.Snapshot();
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -182,48 +185,52 @@ void DrawInterface(HWND window, ConversionController& controller) {
                                        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
     ImGui::Begin("HeicConverter", nullptr, flags);
 
-    ImGui::TextUnformatted("HEIC → PNG / JPG 批量转换");
-    ImGui::TextDisabled("libheif 解码 · libpng / libjpeg-turbo 导出");
+    ImGui::TextUnformatted(strings.heading);
+    ImGui::TextDisabled("%s", strings.subtitle);
+    ImGui::TextUnformatted("语言 / Language:");
+    ImGui::SameLine();
+    ImGui::RadioButton("中文##language-chinese", &languageSelection, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("English##language-english", &languageSelection, 1);
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
     ImGui::BeginDisabled(snapshot.running);
     ImGui::SetNextItemWidth(-112.0F);
-    ImGui::InputTextWithHint("##folder", "请选择文件夹", &folder);
+    ImGui::InputTextWithHint("##folder", strings.folderHint, &folder);
     ImGui::SameLine();
-    if (ImGui::Button("浏览…", ImVec2(100.0F, 0.0F))) {
-        const std::string picked = PickFolder(window);
+    if (ImGui::Button(strings.browse, ImVec2(100.0F, 0.0F))) {
+        const std::string picked = PickFolder(window, strings.folderDialogTitle);
         if (!picked.empty()) {
             folder = picked;
         }
     }
 
-    ImGui::Checkbox("搜索子目录", &recursive);
-    ImGui::SameLine(190.0F);
-    ImGui::Checkbox("转换成功后删除原 HEIC", &deleteOriginals);
-    ImGui::SameLine(470.0F);
-    ImGui::Checkbox("覆盖已有目标文件", &overwriteExisting);
+    ImGui::Checkbox(strings.searchSubdirectories, &recursive);
+    ImGui::SameLine();
+    ImGui::Checkbox(strings.deleteOriginals, &deleteOriginals);
+    ImGui::SameLine();
+    ImGui::Checkbox(strings.overwriteExisting, &overwriteExisting);
 
-    ImGui::TextUnformatted("输出格式:");
-    ImGui::SameLine(105.0F);
-    ImGui::RadioButton("PNG（无损、支持透明）", &outputFormat, 0);
-    ImGui::SameLine(330.0F);
-    ImGui::RadioButton("JPG（体积较小）", &outputFormat, 1);
+    ImGui::TextUnformatted(strings.outputFormat);
+    ImGui::SameLine(130.0F);
+    ImGui::RadioButton(strings.pngOption, &outputFormat, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton(strings.jpegOption, &outputFormat, 1);
     if (outputFormat == 1) {
-        ImGui::SameLine(530.0F);
-        ImGui::SetNextItemWidth(-1.0F);
-        ImGui::SliderInt("##jpeg-quality", &jpegQuality, 1, 100, "质量 %d");
+        ImGui::SetNextItemWidth(360.0F);
+        ImGui::SliderInt("##jpeg-quality", &jpegQuality, 1, 100, strings.jpegQualityFormat);
     }
 
     const unsigned int detectedThreads = std::thread::hardware_concurrency();
     const int maximumWorkerCount = static_cast<int>(std::clamp(detectedThreads == 0 ? 1U : detectedThreads, 1U, 32U));
-    ImGui::TextUnformatted("并行线程:");
-    ImGui::SameLine(105.0F);
+    ImGui::TextUnformatted(strings.parallelThreads);
+    ImGui::SameLine(130.0F);
     ImGui::SetNextItemWidth(260.0F);
-    ImGui::SliderInt("##worker-count", &workerCount, 1, maximumWorkerCount, "%d 个线程");
+    ImGui::SliderInt("##worker-count", &workerCount, 1, maximumWorkerCount, strings.workerCountFormat);
     ImGui::SameLine();
-    ImGui::TextDisabled("（检测到 %u 个逻辑处理器）", detectedThreads == 0 ? 1U : detectedThreads);
+    ImGui::TextDisabled(strings.detectedProcessorsFormat, detectedThreads == 0 ? 1U : detectedThreads);
 
     bool folderValid = false;
     try {
@@ -236,7 +243,7 @@ void DrawInterface(HWND window, ConversionController& controller) {
     }
 
     ImGui::BeginDisabled(!folderValid);
-    if (ImGui::Button("开始转换", ImVec2(130.0F, 38.0F))) {
+    if (ImGui::Button(strings.start, ImVec2(160.0F, 38.0F))) {
         ConversionOptions options;
         options.folder = Utf8ToWide(folder);
         options.recursive = recursive;
@@ -245,6 +252,7 @@ void DrawInterface(HWND window, ConversionController& controller) {
         options.outputFormat = outputFormat == 1 ? OutputFormat::Jpeg : OutputFormat::Png;
         options.jpegQuality = jpegQuality;
         options.workerCount = static_cast<size_t>(workerCount);
+        options.language = language;
         controller.Start(std::move(options));
     }
     ImGui::EndDisabled();
@@ -252,7 +260,9 @@ void DrawInterface(HWND window, ConversionController& controller) {
 
     if (snapshot.running) {
         ImGui::SameLine();
-        if (ImGui::Button(snapshot.cancellationRequested ? "正在停止…" : "取消", ImVec2(130.0F, 38.0F)) &&
+        if (ImGui::Button(
+                snapshot.cancellationRequested ? strings.stopping : strings.cancel,
+                ImVec2(160.0F, 38.0F)) &&
             !snapshot.cancellationRequested) {
             controller.Cancel();
         }
@@ -264,28 +274,28 @@ void DrawInterface(HWND window, ConversionController& controller) {
                                : static_cast<float>(snapshot.processed) / static_cast<float>(snapshot.total);
     std::string overlay = std::to_string(snapshot.processed) + " / " + std::to_string(snapshot.total);
     ImGui::ProgressBar(std::clamp(progress, 0.0F, 1.0F), ImVec2(-1.0F, 26.0F), overlay.c_str());
-    ImGui::Text("状态: %s", snapshot.status.c_str());
+    ImGui::Text(strings.statusFormat, snapshot.status.c_str());
     ImGui::Text(
-        "成功 %zu    失败 %zu    跳过 %zu    活跃线程 %zu / %zu",
+        strings.summaryFormat,
         snapshot.succeeded,
         snapshot.failed,
         snapshot.skipped,
         snapshot.activeWorkers,
         snapshot.workerCount);
     if (!snapshot.currentFile.empty()) {
-        ImGui::TextWrapped("当前: %s", snapshot.currentFile.c_str());
+        ImGui::TextWrapped(strings.currentFormat, snapshot.currentFile.c_str());
     }
 
     ImGui::Spacing();
-    ImGui::SeparatorText("处理日志");
+    ImGui::SeparatorText(strings.processingLog);
     const float footerHeight = ImGui::GetFrameHeightWithSpacing();
     ImGui::BeginChild("log", ImVec2(0.0F, -footerHeight), ImGuiChildFlags_Borders);
     for (const std::string& line : snapshot.log) {
-        if (line.rfind("失败:", 0) == 0 || line.rfind("任务失败:", 0) == 0) {
+        if (line.rfind(strings.failurePrefix, 0) == 0 || line.rfind(strings.taskFailurePrefix, 0) == 0) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.42F, 0.42F, 1.0F));
             ImGui::TextWrapped("%s", line.c_str());
             ImGui::PopStyleColor();
-        } else if (line.rfind("跳过:", 0) == 0 || line.rfind("扫描警告:", 0) == 0) {
+        } else if (line.rfind(strings.skippedPrefix, 0) == 0 || line.rfind(strings.scanWarningPrefix, 0) == 0) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0F, 0.78F, 0.35F, 1.0F));
             ImGui::TextWrapped("%s", line.c_str());
             ImGui::PopStyleColor();
@@ -302,7 +312,7 @@ void DrawInterface(HWND window, ConversionController& controller) {
         scrollToBottom = false;
     }
     ImGui::EndChild();
-    ImGui::TextDisabled("提示：只有目标图片成功写入后才会删除原文件；JPG 不支持透明通道。");
+    ImGui::TextDisabled("%s", strings.tip);
 
     ImGui::End();
 }

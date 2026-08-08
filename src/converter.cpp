@@ -37,7 +37,7 @@ bool ConversionController::Start(ConversionOptions options) {
     workerCount_ = 0;
     activeWorkers_ = 0;
     currentFile_.clear();
-    status_ = "正在扫描 HEIC 文件…";
+    status_ = SelectText(options.language, "正在扫描 HEIC 文件…", "Scanning for HEIC files...");
     log_.clear();
     worker_ = std::thread(&ConversionController::Run, this, std::move(options));
     return true;
@@ -68,7 +68,7 @@ void ConversionController::Run(ConversionOptions options) {
     try {
         std::vector<std::string> warnings;
         std::vector<std::filesystem::path> files =
-            heic_converter::FindHeicFiles(options.folder, options.recursive, warnings);
+            heic_converter::FindHeicFiles(options.folder, options.recursive, options.language, warnings);
         constexpr size_t maxWorkerCount = 64;
         const unsigned int hardwareThreads = std::thread::hardware_concurrency();
         const size_t requestedWorkerCount = options.workerCount == 0
@@ -79,9 +79,13 @@ void ConversionController::Run(ConversionOptions options) {
             std::lock_guard lock(mutex_);
             total_ = files.size();
             workerCount_ = workerCount;
-            status_ = files.empty()
-                          ? "没有找到 HEIC 文件"
-                          : "正在并行转换（" + std::to_string(workerCount) + " 个线程）…";
+            if (files.empty()) {
+                status_ = SelectText(options.language, "没有找到 HEIC 文件", "No HEIC files found");
+            } else if (options.language == Language::English) {
+                status_ = "Converting in parallel (" + std::to_string(workerCount) + " threads)...";
+            } else {
+                status_ = "正在并行转换（" + std::to_string(workerCount) + " 个线程）…";
+            }
             for (auto& warning : warnings) {
                 log_.push_back(std::move(warning));
             }
@@ -144,11 +148,23 @@ void ConversionController::Run(ConversionOptions options) {
                             std::error_code filesystemError;
                             const bool outputExists = std::filesystem::exists(output, filesystemError);
                             if (filesystemError) {
-                                completeFile(FileResult::Failed, "失败: " + inputName + " — 无法检查目标文件");
+                                completeFile(
+                                    FileResult::Failed,
+                                    std::string(SelectText(options.language, "失败: ", "Failed: ")) + inputName +
+                                        SelectText(
+                                            options.language,
+                                            " — 无法检查目标文件",
+                                            " — Could not inspect the output file"));
                                 continue;
                             }
                             if (outputExists && !options.overwriteExisting) {
-                                completeFile(FileResult::Skipped, "跳过: " + inputName + " — 目标文件已存在");
+                                completeFile(
+                                    FileResult::Skipped,
+                                    std::string(SelectText(options.language, "跳过: ", "Skipped: ")) + inputName +
+                                        SelectText(
+                                            options.language,
+                                            " — 目标文件已存在",
+                                            " — The output file already exists"));
                                 continue;
                             }
 
@@ -156,36 +172,70 @@ void ConversionController::Run(ConversionOptions options) {
                                 heic_converter::MakeTemporaryPath(output, index);
                             std::string errorMessage;
                             bool success = heic_converter::ConvertImage(
-                                input, temporary, options.outputFormat, options.jpegQuality, errorMessage);
+                                input,
+                                temporary,
+                                options.outputFormat,
+                                options.jpegQuality,
+                                options.language,
+                                errorMessage);
                             if (success) {
                                 success = heic_converter::CommitTemporaryFile(
-                                    temporary, output, options.overwriteExisting, errorMessage);
+                                    temporary,
+                                    output,
+                                    options.overwriteExisting,
+                                    options.language,
+                                    errorMessage);
                             }
 
                             if (!success) {
                                 std::error_code ignored;
                                 std::filesystem::remove(temporary, ignored);
-                                completeFile(FileResult::Failed, "失败: " + inputName + " — " + errorMessage);
+                                completeFile(
+                                    FileResult::Failed,
+                                    std::string(SelectText(options.language, "失败: ", "Failed: ")) + inputName +
+                                        " — " + errorMessage);
                                 continue;
                             }
 
+                            const std::string outputName = WideToUtf8(output.wstring());
                             std::string logLine =
-                                "完成: " + inputName + " → " + WideToUtf8(output.wstring());
+                                std::string(SelectText(options.language, "完成: ", "Completed: ")) + inputName +
+                                " → " + outputName;
                             if (options.deleteOriginals) {
                                 std::error_code deleteError;
                                 if (!std::filesystem::remove(input, deleteError) || deleteError) {
-                                    logLine += "（目标图片已生成，但原文件删除失败）";
+                                    logLine += SelectText(
+                                        options.language,
+                                        "（目标图片已生成，但原文件删除失败）",
+                                        " (output created, but the original could not be deleted)");
                                 } else {
-                                    logLine += "（已删除原文件）";
+                                    logLine += SelectText(
+                                        options.language, "（已删除原文件）", " (original deleted)");
                                 }
                             }
                             completeFile(FileResult::Succeeded, std::move(logLine));
                         } catch (const std::exception& error) {
-                            const std::string displayName = inputName.empty() ? "<无法显示的路径>" : inputName;
-                            completeFile(FileResult::Failed, "失败: " + displayName + " — " + error.what());
+                            const std::string displayName = inputName.empty()
+                                                                ? SelectText(
+                                                                      options.language,
+                                                                      "<无法显示的路径>",
+                                                                      "<unprintable path>")
+                                                                : inputName;
+                            completeFile(
+                                FileResult::Failed,
+                                std::string(SelectText(options.language, "失败: ", "Failed: ")) + displayName +
+                                    " — " + error.what());
                         } catch (...) {
-                            const std::string displayName = inputName.empty() ? "<无法显示的路径>" : inputName;
-                            completeFile(FileResult::Failed, "失败: " + displayName + " — 未知错误");
+                            const std::string displayName = inputName.empty()
+                                                                ? SelectText(
+                                                                      options.language,
+                                                                      "<无法显示的路径>",
+                                                                      "<unprintable path>")
+                                                                : inputName;
+                            completeFile(
+                                FileResult::Failed,
+                                std::string(SelectText(options.language, "失败: ", "Failed: ")) + displayName +
+                                    SelectText(options.language, " — 未知错误", " — Unknown error"));
                         }
                     }
                 });
@@ -195,24 +245,25 @@ void ConversionController::Run(ConversionOptions options) {
         std::lock_guard lock(mutex_);
         currentFile_.clear();
         if (cancelRequested_.load()) {
-            status_ = "已取消";
+            status_ = SelectText(options.language, "已取消", "Cancelled");
         } else if (files.empty()) {
-            status_ = "没有找到 HEIC 文件";
+            status_ = SelectText(options.language, "没有找到 HEIC 文件", "No HEIC files found");
         } else {
-            status_ = "转换完成";
+            status_ = SelectText(options.language, "转换完成", "Conversion complete");
         }
         running_ = false;
     } catch (const std::exception& error) {
         std::lock_guard lock(mutex_);
-        log_.push_back(std::string("任务失败: ") + error.what());
+        log_.push_back(
+            std::string(SelectText(options.language, "任务失败: ", "Task failed: ")) + error.what());
         currentFile_.clear();
-        status_ = "任务失败";
+        status_ = SelectText(options.language, "任务失败", "Task failed");
         running_ = false;
     } catch (...) {
         std::lock_guard lock(mutex_);
-        log_.push_back("任务失败: 未知错误");
+        log_.push_back(SelectText(options.language, "任务失败: 未知错误", "Task failed: Unknown error"));
         currentFile_.clear();
-        status_ = "任务失败";
+        status_ = SelectText(options.language, "任务失败", "Task failed");
         running_ = false;
     }
 }

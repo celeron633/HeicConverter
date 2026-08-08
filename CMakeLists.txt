@@ -73,6 +73,8 @@ add_library(HeicConverterCore STATIC
     src/image_converter.h
     src/image_writers.cpp
     src/image_writers.h
+    src/localization.cpp
+    src/localization.h
     src/output_format.h
     src/utf8.cpp
     src/utf8.h

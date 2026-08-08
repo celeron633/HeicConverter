@@ -23,17 +23,18 @@ bool WritePng(
     int width,
     int height,
     int stride,
+    Language language,
     std::string& errorMessage) {
     FILE* file = nullptr;
     if (_wfopen_s(&file, output.c_str(), L"wb") != 0 || file == nullptr) {
-        errorMessage = "无法创建临时 PNG 文件";
+        errorMessage = SelectText(language, "无法创建临时 PNG 文件", "Could not create the temporary PNG file");
         return false;
     }
 
     png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
     if (png == nullptr) {
         fclose(file);
-        errorMessage = "libpng 初始化失败";
+        errorMessage = SelectText(language, "libpng 初始化失败", "Failed to initialize libpng");
         return false;
     }
 
@@ -41,7 +42,8 @@ bool WritePng(
     if (info == nullptr) {
         png_destroy_write_struct(&png, nullptr);
         fclose(file);
-        errorMessage = "libpng 信息结构初始化失败";
+        errorMessage = SelectText(
+            language, "libpng 信息结构初始化失败", "Failed to initialize the libpng info structure");
         return false;
     }
 
@@ -53,7 +55,7 @@ bool WritePng(
     if (setjmp(png_jmpbuf(png)) != 0) {
         png_destroy_write_struct(&png, &info);
         fclose(file);
-        errorMessage = "libpng 写入失败";
+        errorMessage = SelectText(language, "libpng 写入失败", "libpng failed to write the image");
         return false;
     }
 
@@ -74,7 +76,8 @@ bool WritePng(
     png_destroy_write_struct(&png, &info);
 
     if (fclose(file) != 0) {
-        errorMessage = "刷新 PNG 文件到磁盘时失败";
+        errorMessage = SelectText(
+            language, "刷新 PNG 文件到磁盘时失败", "Failed to flush the PNG file to disk");
         return false;
     }
     return true;
@@ -118,22 +121,23 @@ bool WriteJpeg(
     int height,
     int stride,
     int quality,
+    Language language,
     std::string& errorMessage) {
     if (static_cast<size_t>(width) > SIZE_MAX / 3U) {
-        errorMessage = "图像宽度过大";
+        errorMessage = SelectText(language, "图像宽度过大", "The image width is too large");
         return false;
     }
 
     FILE* file = nullptr;
     if (_wfopen_s(&file, output.c_str(), L"wb") != 0 || file == nullptr) {
-        errorMessage = "无法创建临时 JPG 文件";
+        errorMessage = SelectText(language, "无法创建临时 JPG 文件", "Could not create the temporary JPG file");
         return false;
     }
 
     auto* row = static_cast<JSAMPLE*>(malloc(static_cast<size_t>(width) * 3U));
     if (row == nullptr) {
         fclose(file);
-        errorMessage = "JPG 行缓冲区分配失败";
+        errorMessage = SelectText(language, "JPG 行缓冲区分配失败", "Failed to allocate the JPG row buffer");
         return false;
     }
 
@@ -149,7 +153,10 @@ bool WriteJpeg(
         }
         free(row);
         fclose(file);
-        errorMessage = errorManager.message[0] == '\0' ? "libjpeg 写入失败" : errorManager.message;
+        const std::string detail = errorManager.message[0] == '\0' ? "" : std::string(": ") + errorManager.message;
+        errorMessage = std::string(SelectText(
+                           language, "libjpeg 写入失败", "libjpeg failed to write the image")) +
+                       detail;
         return false;
     }
 
@@ -184,7 +191,8 @@ bool WriteJpeg(
     jpeg_destroy_compress(&compressor);
     free(row);
     if (fclose(file) != 0) {
-        errorMessage = "刷新 JPG 文件到磁盘时失败";
+        errorMessage = SelectText(
+            language, "刷新 JPG 文件到磁盘时失败", "Failed to flush the JPG file to disk");
         return false;
     }
     return true;

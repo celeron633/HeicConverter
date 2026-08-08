@@ -113,7 +113,7 @@ int wmain(int argc, wchar_t** argv) {
         });
         if (snapshot.total != inputs.size() || snapshot.succeeded != inputs.size() || snapshot.failed != 0 ||
             snapshot.workerCount != options.workerCount || snapshot.activeWorkers != 0 || !pngInputsDeleted ||
-            !pngOutputsValid) {
+            !pngOutputsValid || snapshot.status != "转换完成") {
             std::cerr << "Unexpected result: total=" << snapshot.total << " succeeded=" << snapshot.succeeded
                       << " failed=" << snapshot.failed << " status=" << snapshot.status << '\n';
             for (const auto& line : snapshot.log) {
@@ -127,6 +127,7 @@ int wmain(int argc, wchar_t** argv) {
         }
         options.outputFormat = OutputFormat::Jpeg;
         options.jpegQuality = 87;
+        options.language = Language::English;
         if (!controller.Start(options)) {
             std::cerr << "Could not start JPEG conversion.\n";
             return 1;
@@ -151,7 +152,10 @@ int wmain(int argc, wchar_t** argv) {
         });
         if (snapshot.total != inputs.size() || snapshot.succeeded != inputs.size() || snapshot.failed != 0 ||
             snapshot.workerCount != options.workerCount || snapshot.activeWorkers != 0 || !jpegInputsDeleted ||
-            !jpegOutputsValid) {
+            !jpegOutputsValid || snapshot.status != "Conversion complete" || snapshot.log.size() != inputs.size() ||
+            std::any_of(snapshot.log.begin(), snapshot.log.end(), [](const std::string& line) {
+                return line.rfind("Completed:", 0) != 0;
+            })) {
             std::cerr << "Unexpected JPEG result: total=" << snapshot.total << " succeeded=" << snapshot.succeeded
                       << " failed=" << snapshot.failed << " status=" << snapshot.status << '\n';
             for (const auto& line : snapshot.log) {
